@@ -92,7 +92,7 @@ def drive(name, stop_at, timeout, extra=(), inworld_args=()):
         if state == "cleanup" and reason and reason.startswith("error."):
             shot(run, "error")
             raise SystemExit(f"client gave up: {reason}")
-        if not winproc.emu_pids() and time.time() - t0 > 30:
+        if not winproc.emu_pids() and time.time() - t0 > 90:   # the activity host can take ~30 s to arm
             raise SystemExit("shadPS4 is not running")
         if state == "bootflow:start" and not any(s == "bootflow:platform_signin" for s, _ in st):
             if "title" not in shots and time.time() - t0 > 20:

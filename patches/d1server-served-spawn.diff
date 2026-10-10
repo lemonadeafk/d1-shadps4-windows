@@ -118,7 +118,7 @@ index c535359..e959af6 100644
              Err(e) => {
                  events.push(AhEvent::NamedGate { what: "AH wire codec", detail: e.to_string() });
 diff --git a/d1-server/crates/d1-activity-host/src/main.rs b/d1-server/crates/d1-activity-host/src/main.rs
-index d6bf57f..5c174fb 100644
+index d6bf57f..0db111e 100644
 --- a/d1-server/crates/d1-activity-host/src/main.rs
 +++ b/d1-server/crates/d1-activity-host/src/main.rs
 @@ -496,18 +496,36 @@ fn main() -> anyhow::Result<()> {
@@ -159,7 +159,7 @@ index d6bf57f..5c174fb 100644
                      let gen = std::env::var("D1_AH_SENSOR_GEN")
                          .ok()
                          .and_then(&parse_u32)
-@@ -526,9 +544,21 @@ fn main() -> anyhow::Result<()> {
+@@ -526,9 +544,31 @@ fn main() -> anyhow::Result<()> {
                          name_sub,
                          phase,
                          tail,
@@ -169,6 +169,16 @@ index d6bf57f..5c174fb 100644
 +                        time_of_day: std::env::var("D1_AH_SENSOR_TIME_OF_DAY")
 +                            .ok()
 +                            .and_then(|v| v.trim().parse::<f32>().ok()),
++                        // ⭐ `D1_AH_SENSOR_AUTHORITY=<peer index>[:<generation>[:<valid 0|1>]]`:
++                        // the sensor authority table entry for that peer (see SensorAuthority).
++                        authority: std::env::var("D1_AH_SENSOR_AUTHORITY").ok().and_then(|v| {
++                            let mut it = v.split(':');
++                            Some(d1_oracle::sensor::SensorAuthority {
++                                peer_index: it.next()?.trim().parse().ok()?,
++                                generation: it.next().and_then(|g| g.trim().parse().ok()).unwrap_or(1),
++                                valid: it.next().map_or(true, |v| v.trim() != "0"),
++                            })
++                        }),
                      };
                      match d1_activity_host::codec::SchemaCodec::build_sensor(&params) {
                          Ok(bytes) => {
@@ -181,7 +191,7 @@ index d6bf57f..5c174fb 100644
                              tracing::info!(
                                  "⭐⭐ D1_AH_SENSOR_PHASE={phase} - armed a udt-5 sensor_auth_update \
                                   ({} bytes) to write activity lifetime phase {phase} into \
-@@ -564,6 +594,13 @@ fn main() -> anyhow::Result<()> {
+@@ -564,6 +604,13 @@ fn main() -> anyhow::Result<()> {
              if let Some(s) = sensor_repeat_s {
                  tracing::info!("udt-5 sensor repeat armed: every {s} s while Live");
              }
@@ -195,7 +205,7 @@ index d6bf57f..5c174fb 100644
  
              let session_id = format!("d1ah-{ah_id:016x}");
              let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
-@@ -584,6 +621,9 @@ fn main() -> anyhow::Result<()> {
+@@ -584,6 +631,9 @@ fn main() -> anyhow::Result<()> {
                          if let Some(s) = sensor_repeat_s {
                              i.set_sensor_repeat(std::time::Duration::from_secs(s));
                          }
@@ -205,7 +215,7 @@ index d6bf57f..5c174fb 100644
                      }
                      i.set_host_heartbeat(std::time::Duration::from_millis(heartbeat_ms));
                      i
-@@ -593,3 +633,129 @@ fn main() -> anyhow::Result<()> {
+@@ -593,3 +643,158 @@ fn main() -> anyhow::Result<()> {
          }
      }
  }
@@ -298,6 +308,35 @@ index d6bf57f..5c174fb 100644
 +            None => tracing::error!(
 +                "⛔ D1_AH_SENSOR_PLAYER_SLOT={spec}: no i8-12 entry with that sub in the manifest"
 +            ),
++        }
++    }
++    // ⭐ `D1_AH_SENSOR_KIND_VALUE=<kind>:<tag>:<image file>[,...]` (experiment): every slot of
++    // that kind is sent with this value image instead of the bare default. Used to probe what a
++    // record class does with host state - e.g. squad members (kind 2, 0x80800868), whose setter
++    // FUN_001BE5F0 spawns the actor when value+6 is set and value+5 is 0 or 2 (FUN_001BE9B0).
++    if let Ok(spec) = std::env::var("D1_AH_SENSOR_KIND_VALUE") {
++        for item in spec.split(',') {
++            let f: Vec<&str> = item.splitn(3, ':').collect();
++            let parsed = match f.as_slice() {
++                [k, t, path] => k.trim().parse::<u8>().ok().zip(
++                    u32::from_str_radix(t.trim().trim_start_matches("0x"), 16).ok(),
++                ).zip(std::fs::read(path.trim()).ok()),
++                _ => None,
++            };
++            match parsed {
++                Some(((kind, tag), image)) => {
++                    let mut n = 0;
++                    for e in out.iter_mut().filter(|e| e.name_i8 == kind && e.value.is_none()) {
++                        e.value = Some((tag, image.clone()));
++                        n += 1;
++                    }
++                    tracing::info!(
++                        "⭐ D1_AH_SENSOR_KIND_VALUE: {n} kind-{kind} slots carry a {}-byte value of {tag:#010x}",
++                        image.len()
++                    );
++                }
++                None => tracing::error!("⛔ D1_AH_SENSOR_KIND_VALUE: cannot use `{item}` (want kind:tag:file)"),
++            }
 +        }
 +    }
 +    out
@@ -603,15 +642,16 @@ index e571644..214bed7 100644
  
  pub use activity_host::{AhCodec, AhSchema};
 diff --git a/d1-server/crates/d1-oracle/src/main.rs b/d1-server/crates/d1-oracle/src/main.rs
-index 407b1a9..61c9203 100644
+index 407b1a9..6b60ff4 100644
 --- a/d1-server/crates/d1-oracle/src/main.rs
 +++ b/d1-server/crates/d1-oracle/src/main.rs
-@@ -610,6 +610,8 @@ fn run_sensor(_cli: &Cli, cmd: &SensorCmd) -> anyhow::Result<ExitCode> {
+@@ -610,6 +610,9 @@ fn run_sensor(_cli: &Cli, cmd: &SensorCmd) -> anyhow::Result<ExitCode> {
                  name_sub: *name_sub,
                  phase: *phase,
                  tail,
 +                init: Vec::new(),
 +                time_of_day: None,
++                authority: None,
              };
              let payload = m.encode()?;
              println!(
@@ -720,7 +760,7 @@ index b58427a..234cb07 100644
          // ⭐ Everything allocated from here on is one call's scratch. Nothing after this line may
          // allocate scaffolding that outlives a call - `begin_call` releases it.
 diff --git a/d1-server/crates/d1-oracle/src/sensor.rs b/d1-server/crates/d1-oracle/src/sensor.rs
-index 0f39932..a578e6d 100644
+index 0f39932..5b61ea2 100644
 --- a/d1-server/crates/d1-oracle/src/sensor.rs
 +++ b/d1-server/crates/d1-oracle/src/sensor.rs
 @@ -90,7 +90,7 @@ const NONE_U32: u32 = 0xFFFF_FFFF;
@@ -732,7 +772,7 @@ index 0f39932..a578e6d 100644
  pub struct SensorPhaseUpdate {
      /// Replication generation; must equal the client's `world+0x1D` at receive, or the applier
      /// silently skips the frame (`jne` @0x2A145C). A wrong value here is the project's signature
-@@ -107,6 +107,69 @@ pub struct SensorPhaseUpdate {
+@@ -107,6 +107,110 @@ pub struct SensorPhaseUpdate {
      /// `Some((id, hash))` also sets `record+0x674`/`record+0x678` (value fields `[8]`/`[9]`), the
      /// second spawn precondition `FUN_0010CB60` checks. `None` leaves them at their defaults.
      pub tail: Option<(u32, u32)>,
@@ -747,6 +787,47 @@ index 0f39932..a578e6d 100644
 +    /// `FUN_0011DE30` then calls the `c_time_of_day` setter `0x8B46C0` with `record+0x680`
 +    /// (@0x11DF72..0x11DFD6). Without it every activity starts at midnight.
 +    pub time_of_day: Option<f32>,
++    /// ⭐ `Some(peer)`: also send the sensor AUTHORITY table (`has_sensor_block = 1`) declaring
++    /// that peer index's sensors live. See [`authority_table_image`].
++    pub authority: Option<SensorAuthority>,
++}
++
++/// Which peer's sensors the host declares live, and with what generation.
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub struct SensorAuthority {
++    /// Index into the 65-entry table = the owner index sensor slots carry at `slot+0x60`
++    /// (0 for a solo client's squads and objectives).
++    pub peer_index: u8,
++    /// Must differ from the client's stored value (0 at load) for the change to fire.
++    pub generation: u16,
++    /// `false` OPENS the hand-over: a new generation sets the peer's bits in `world+0xA70` and
++    /// `+0xA7C`; once its slots have their initial state the client clears `+0xA7C`
++    /// (@0x2A0B62) and from then on applies host values to squads/members (their setters gate on
++    /// `FUN_00108360` -> `FUN_002A1050`: bit set in +0xA70, clear in +0xA7C). `true` CLOSES it:
++    /// the authority-change callbacks fire and both bits are cleared.
++    pub valid: bool,
++}
++
++/// Schema of the sensor authority table (`*[0x1902280]`, struct 0x310): `{u32, 65 x {8-byte peer
++/// id, u16 generation, bool valid}}`, stored at `world+0xA88`.
++pub const TAG_AUTHORITY_TABLE: u32 = 0x8080_0CF7;
++pub const AUTHORITY_ENTRIES: usize = 65;
++
++/// ⭐ The authority table with one entry made live.
++///
++/// `FUN_002A1210` reads 65 "entry changed" bits, decodes the table, then runs `FUN_002A1080` per
++/// entry: a changed entry whose generation differs from the stored one (`world+0xA94+i*12`) is
++/// armed, and if its `valid` byte (+0x0A) is set the authority-change callbacks fire with that
++/// index (`FUN_002408B0`). `c_squad_sensor_authority_change_observer` (vtable 0x18EE5C0, slot 0
++/// `FUN_00106090`) acts when the index is the LOCAL peer and then walks the kind-1 (squad)
++/// records. Without this block the table stays zero and no squad is ever started - the "loaded
++/// but empty world". Re-sending the same generation does not re-fire.
++pub fn authority_table_image(a: SensorAuthority) -> Vec<u8> {
++    let mut b = vec![0u8; 4 + AUTHORITY_ENTRIES * 12];
++    let e = 4 + usize::from(a.peer_index) * 12;
++    b[e + 8..e + 10].copy_from_slice(&a.generation.to_le_bytes());
++    b[e + 10] = u8::from(a.valid);
++    b
 +}
 +
 +/// One replicated slot to bring to its **schema default**: `fresh=1` makes the client default-init
@@ -802,7 +883,7 @@ index 0f39932..a578e6d 100644
  }
  
  impl SensorPhaseUpdate {
-@@ -124,6 +187,10 @@ impl SensorPhaseUpdate {
+@@ -124,6 +228,10 @@ impl SensorPhaseUpdate {
          let (tail_id, tail_hash) = self.tail.unwrap_or((NONE_U32, FNV1_BASIS));
          put_u32(&mut b, 0x4C8, tail_id);
          put_u32(&mut b, 0x4CC, tail_hash);
@@ -813,7 +894,7 @@ index 0f39932..a578e6d 100644
          put_u32(&mut b, 0x4D8, NONE_U32);
          put_u32(&mut b, 0x4DC, FNV1_BASIS);
          put_u32(&mut b, 0x4E0, 0xFFFF_00FF);
-@@ -149,8 +216,7 @@ impl SensorPhaseUpdate {
+@@ -149,8 +257,7 @@ impl SensorPhaseUpdate {
  
      /// Encode the name reference through the client's own object codec.
      pub fn name_ref_bits(&self) -> Result<(u32, Vec<u8>)> {
@@ -823,8 +904,29 @@ index 0f39932..a578e6d 100644
      }
  
      /// ⭐ Assemble the full 59-byte `sensor_auth_update` payload.
-@@ -166,6 +232,31 @@ impl SensorPhaseUpdate {
-         w.put(0, 1); // has_sensor_block = 0
+@@ -163,9 +270,51 @@ impl SensorPhaseUpdate {
+         let (value_bits, value_pay) = self.value_bits()?;
+         let mut w = BitWriter::default();
+         w.put(u64::from(self.gen), 8);
+-        w.put(0, 1); // has_sensor_block = 0
++        match self.authority {
++            None => w.put(0, 1), // has_sensor_block = 0
++            Some(a) => {
++                if usize::from(a.peer_index) >= AUTHORITY_ENTRIES {
++                    return Err(OracleError::Shape(format!(
++                        "sensor authority peer index {} is outside the 65-entry table",
++                        a.peer_index
++                    )));
++                }
++                w.put(1, 1); // has_sensor_block
++                for i in 0..AUTHORITY_ENTRIES {
++                    w.put(u64::from(i == usize::from(a.peer_index)), 1); // entry changed
++                }
++                let t = ObjectOracle::new(TAG_AUTHORITY_TABLE)?
++                    .encode_replicated(&authority_table_image(a), 0x1_0000)?;
++                w.raw(&t.payload, t.bits as usize);
++            }
++        }
          w.put(0, 32); // stamp
          w.put(1, 1); // init
 +        for e in &self.init {
@@ -855,11 +957,11 @@ index 0f39932..a578e6d 100644
          w.put(1, 1); // has_entry
          w.raw(&name_pay, name_bits as usize);
          w.put(u64::from(2 + value_bits), 32); // body_bit_length = fresh + presence + value
-@@ -173,6 +264,13 @@ impl SensorPhaseUpdate {
+@@ -173,6 +322,13 @@ impl SensorPhaseUpdate {
          w.put(1, 1); // presence
          w.raw(&value_pay, value_bits as usize);
          w.put(0, 1); // terminator (has_entry = 0)
-+        if !self.init.is_empty() {
++        if !self.init.is_empty() || self.authority.is_some() {
 +            // the multi-entry frame is not a byte multiple by construction; the reader stops at
 +            // the terminator, so zero padding after it is never read
 +            while w.bits.len() % 8 != 0 {
@@ -869,7 +971,7 @@ index 0f39932..a578e6d 100644
          w.finish().map_err(|n| {
              OracleError::Shape(format!(
                  "sensor frame is {n} bits, not a byte multiple - a field width is wrong"
-@@ -181,6 +279,16 @@ impl SensorPhaseUpdate {
+@@ -181,6 +337,16 @@ impl SensorPhaseUpdate {
      }
  }
  
@@ -886,12 +988,13 @@ index 0f39932..a578e6d 100644
  fn put_u32(b: &mut [u8], off: usize, v: u32) {
      b[off..off + 4].copy_from_slice(&v.to_le_bytes());
  }
-@@ -243,6 +351,8 @@ fn audit(phase: i8, tail: Option<(u32, u32)>) -> SensorPhaseUpdate {
+@@ -243,6 +409,9 @@ fn audit(phase: i8, tail: Option<(u32, u32)>) -> SensorPhaseUpdate {
          name_sub: AUDIT_NAME_SUB,
          phase,
          tail,
 +        init: Vec::new(),
 +        time_of_day: None,
++        authority: None,
      }
  }
  

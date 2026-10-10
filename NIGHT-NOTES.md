@@ -358,3 +358,24 @@ No more measured Tower inputs. `d1_oracle::world_sensors::derive(world_tag, bubb
   find the actor-creation call for a squad member (simulation entity create,
   c_simulation_squad_entity_definition) and walk back to its trigger - a script command on the
   authority, or a member-record (class 0x80800810, setter in the 0x40xxxx group) field.
+
+## 19. NPCs SPAWN in the Tower (19:50) - run 20261010-194617-WIN-MEMBERS3
+26/26 squad members got actors; vendor marker + friendly radar dots visible (Desktop\tower-npcs.png).
+- Creation trigger = the squad MEMBER's host value (kind 2, schema 0x80800868, 0x908 bytes), not
+  the squad's. Setter FUN_001BE5F0: FUN_001BE9B0 spawns (-> FUN_001BDFB0) when value+6 (bool) is
+  set, value+5 (3-bit state) is 0 or 2, and the member has no actor (rec+0x218 == -1).
+  FUN_001BE870: a changed value+0 (id) with value+4 == 0 destroys the old actor.
+- Squad/member setters are gated by FUN_00108360 -> FUN_002A1050(world, owner): the owner's bit
+  must be SET in world+0xA70 and CLEAR in world+0xA7C = the authority hand-over window.
+  A table entry with a new generation sets both bits (FUN_002A1080); the per-tick check
+  (@0x2A0B62, using FUN_002D0B70) clears +0xA7C once that peer's slots have initial state; a
+  VALID entry fires the callbacks and clears both (window closed). On a normal load both are 0.
+  So: authority entry {gen 1, valid 0} + member values in the repeated frame. With valid=1 in the
+  same frame (first attempt) the window closed before the values were dispatched -> nothing.
+- Knobs (now defaults of d1_launch.py --director): D1_AH_SENSOR_AUTHORITY=0:1:0 and
+  D1_AH_SENSOR_KIND_VALUE=2:0x80800868:capture\values\member_exists.bin (default member image read
+  from a live slot buffer, +0 = 1, +5 = 0, +6 = 1). capture\values\default_kind{1,2,3,40}.bin are
+  the measured defaults. The AH now takes ~30 s to arm (autopilot wait raised to 90 s).
+- Not done: closing the hand-over (valid=1 after the values), squad values (alive counts, states),
+  objectives, the other bubbles' groups, whether vendors are interactable. The member default
+  image is measured, not derived (the harness default-init returns zeros).

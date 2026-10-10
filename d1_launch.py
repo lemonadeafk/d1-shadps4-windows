@@ -446,6 +446,12 @@ def session(args):
                 # city_tower_default1 world record.
                 "D1_AH_SENSOR_WORLD": "0x80c7a005",
                 "D1_AH_SENSOR_PLAYER_SLOT": "auto",
+                # NPCs: open the sensor-authority hand-over for peer 0 (generation 1, not yet
+                # valid) so the client applies host values to squads, and tell every squad member
+                # (kind 2) that it exists. The Tower's vendors and civilians spawn from this.
+                "D1_AH_SENSOR_AUTHORITY": "0:1:0",
+                "D1_AH_SENSOR_KIND_VALUE": "2:0x80800868:" + str(
+                    Path(__file__).resolve().parent / "capture" / "values" / "member_exists.bin"),
                 "D1_AH_SENSOR_REPEAT_S": "5",
                 "D1_AH_SENSOR_REPEAT_MAX": "24",
                 # the same lifetime value sets the world clock: late morning instead of midnight
