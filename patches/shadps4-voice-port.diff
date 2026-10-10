@@ -1,0 +1,76 @@
+diff --git a/src/core/libraries/voice/voice.cpp b/src/core/libraries/voice/voice.cpp
+index 9379cadc..ab61b62f 100644
+--- a/src/core/libraries/voice/voice.cpp
++++ b/src/core/libraries/voice/voice.cpp
+@@ -1,6 +1,8 @@
+ // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ 
++#include <atomic>
++
+ #include "common/logging/log.h"
+ #include "core/libraries/error_codes.h"
+ #include "core/libraries/libs.h"
+@@ -13,8 +15,16 @@ s32 PS4_SYSV_ABI sceVoiceConnectIPortToOPort() {
+     return ORBIS_OK;
+ }
+ 
+-s32 PS4_SYSV_ABI sceVoiceCreatePort() {
+-    LOG_ERROR(Lib_Voice, "(STUBBED) called");
++s32 PS4_SYSV_ABI sceVoiceCreatePort(u32* port_id, const void* param) {
++    // The stub used to take no parameters, so callers got ORBIS_OK but never a port id. Destiny 1
++    // keeps the id in its voice slots; left at 0xFFFFFFFF they make its fireteam session lookup
++    // return NULL, and the game crashes entering orbit. Hand out unique ids; no audio is wired.
++    static std::atomic<u32> next_port_id{0};
++    if (port_id == nullptr || param == nullptr) {
++        return ORBIS_OK; // old stub behaviour; no voice error code is defined here
++    }
++    *port_id = next_port_id++;
++    LOG_ERROR(Lib_Voice, "(STUBBED) called, port_id = {}", *port_id);
+     return ORBIS_OK;
+ }
+ 
+@@ -61,8 +71,12 @@ s32 PS4_SYSV_ABI sceVoiceGetPortInfo(u32 port_id, OrbisVoicePortInfo* info) {
+     return ORBIS_OK;
+ }
+ 
+-s32 PS4_SYSV_ABI sceVoiceGetResourceInfo() {
++s32 PS4_SYSV_ABI sceVoiceGetResourceInfo(OrbisVoiceResourceInfo* info) {
+     LOG_ERROR(Lib_Voice, "(STUBBED) called");
++    if (info == nullptr) {
++        return ORBIS_OK; // old stub behaviour; no voice error code is defined here
++    }
++    *info = {};
+     return ORBIS_OK;
+ }
+ 
+diff --git a/src/core/libraries/voice/voice.h b/src/core/libraries/voice/voice.h
+index 89467c83..8759f705 100644
+--- a/src/core/libraries/voice/voice.h
++++ b/src/core/libraries/voice/voice.h
+@@ -22,7 +22,15 @@ struct OrbisVoicePortInfo {
+ };
+ 
+ s32 PS4_SYSV_ABI sceVoiceConnectIPortToOPort();
+-s32 PS4_SYSV_ABI sceVoiceCreatePort();
++struct OrbisVoiceResourceInfo {
++    u16 max_in_voice_port;
++    u16 max_out_voice_port;
++    u16 max_in_device;
++    u16 max_out_device;
++    u16 max_port_connection;
++};
++
++s32 PS4_SYSV_ABI sceVoiceCreatePort(u32* port_id, const void* param);
+ s32 PS4_SYSV_ABI sceVoiceDeletePort();
+ s32 PS4_SYSV_ABI sceVoiceDisconnectIPortFromOPort();
+ s32 PS4_SYSV_ABI sceVoiceEnd();
+@@ -30,7 +38,7 @@ s32 PS4_SYSV_ABI sceVoiceGetBitRate(u32 port_id, u32* bitrate);
+ s32 PS4_SYSV_ABI sceVoiceGetMuteFlag();
+ s32 PS4_SYSV_ABI sceVoiceGetPortAttr();
+ s32 PS4_SYSV_ABI sceVoiceGetPortInfo(u32 port_id, OrbisVoicePortInfo* info);
+-s32 PS4_SYSV_ABI sceVoiceGetResourceInfo();
++s32 PS4_SYSV_ABI sceVoiceGetResourceInfo(OrbisVoiceResourceInfo* info);
+ s32 PS4_SYSV_ABI sceVoiceGetVolume();
+ s32 PS4_SYSV_ABI sceVoiceInit();
+ s32 PS4_SYSV_ABI sceVoiceInitHQ();

@@ -1,0 +1,27 @@
+diff --git a/src/video_core/renderer_vulkan/vk_runtime.cpp b/src/video_core/renderer_vulkan/vk_runtime.cpp
+index 7e1c025a..964278cb 100644
+--- a/src/video_core/renderer_vulkan/vk_runtime.cpp
++++ b/src/video_core/renderer_vulkan/vk_runtime.cpp
+@@ -57,16 +57,19 @@ static std::pair<u32, u32> SanitizeCopyLayers(const VideoCore::ImageInfo& src_in
+             src_layers = dst_layers = std::min(src_layers, dst_layers);
+         }
+     } else {
+-        // For 2D <-> 3D copies, 2D layer count must equal 3D depth.
++        // For 2D <-> 3D copies the 2D layer count maps onto 3D depth slices. Only CLAMP it: an
++        // array with fewer layers than the volume is deep is a partial write of the volume (Destiny
++        // renders its 32^3 colour-grading LUT as four batches of 8 slices), and asking Vulkan for
++        // more layers than the array has is an invalid copy that silently drops those slices.
+         if (vk_src_type == vk::ImageType::e2D && vk_dst_type == vk::ImageType::e3D &&
+-            src_layers != depth) {
++            src_layers > depth) {
+             LOG_WARNING(Render_Vulkan,
+                         "Coercing copy 2D source layers {} to 3D destination depth {}", src_layers,
+                         depth);
+             src_layers = depth;
+         }
+         if (vk_src_type == vk::ImageType::e3D && vk_dst_type == vk::ImageType::e2D &&
+-            dst_layers != depth) {
++            dst_layers > depth) {
+             LOG_WARNING(Render_Vulkan,
+                         "Coercing copy 2D destination layers {} to 3D source depth {}", dst_layers,
+                         depth);

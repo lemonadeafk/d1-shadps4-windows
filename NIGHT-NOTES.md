@@ -1,0 +1,336 @@
+# Night notes - 2026-10-10
+
+Running log of unattended work. Newest section at the bottom. Each entry says what was tried, what
+happened, and what state things were left in.
+
+## State at start (02:25)
+- Tower reachable: `Launch Destiny (tower).cmd` -> orbit -> `python tools\d1_inworld.py`.
+- Persistent hosts redirect is ON (`Undo unattended runs.cmd` removes it).
+- Plan, in order: (1) autopilot for unattended sessions, (2) lighting, (3) the loading stall when
+  walking between Tower areas, (4) character creation + a working director (Earth/Tower selectable).
+
+## 1. Autopilot - DONE (02:40)
+`python tools\autopilot.py` takes a session from nothing to standing in the Tower in ~2 min with no
+input: launches, presses X at the title, skips the first-run settings screens by memory write
+(profile_setup counter, d1preservation's own lever), runs the in-world script, screenshots each stage
+into the run folder. `--no-spawn` stops in-world without the Guardian spawn (the spawn is what crashes
+after 1-3 min). `--kill` ends a session cleanly. `--renderdoc` launches under portable RenderDoc.
+
+## 2. Lighting - DIAGNOSED, NOT FIXED (03:52)
+Captured a Tower frame with RenderDoc (tools\rdc_survey.py runs inside qrenderdoc) and walked the
+pipeline. What is FINE: albedo, normals, depth, the sun shadow mask (correct sun/shade split), the
+local-light buffers (orange/blue lamps). What is WRONG: there is almost no sun or sky light.
+The cause is in the GAME's own per-frame lighting constants, not in shadPS4's copy of them:
+- composite pass (eid 42729) constants at +512/+528/+544 read (0.347, 1.87e-13 x3), (1.63, 60.59 x3),
+  (0.392, 7.87e-12 x3) - colour terms ~1e-13 = no light.
+- the same values are in GUEST memory (found by search, e.g. 0x2c0d0bbd0), so the game computed them.
+- the sun is up: c_sun_manager reads (-81.08, 48.67) - elevation ~49 degrees, i.e. daytime.
+=> the sun is positioned right but its light is crushed by ~1e-13 - looks like atmospheric
+   transmittance exp(-huge). Leading suspect: atmosphere/lighting parameters from content (the sun
+   manager references content tag 0x80ca0ded) or a server-fed value (activity host never sends udt 2
+   world_globals_state, whose +0x520 is a world time base).
+Ruled out: shadPS4 readbacks (relaxed and precise), the colour-LUT texture bug (fixed anyway - big
+texture-cache cleanup), GPU accuracy options (copy_gpu_buffers CRASHES shadPS4 - don't use).
+Kept in shadPS4: 3D-texture-slice render target fix (patches\shadps4-*.diff), file-triggered RenderDoc
+capture (touch AppData\Roaming\shadPS4\capture.trigger), a texture diagnostic log line (D1DIAG).
+
+## 3. Loading stall between Tower areas - NOT REPRODUCED (04:00)
+Walking works unattended (`python tools\gamewin.py hold 8 w`; WASD move, IJKL camera, x sprint).
+Walked from the courtyard to a plaza: no stall, and the client sent the activity host nothing but
+keepalives (udt 15) and a stats report (udt 47 high_water). Dark areas are just the broken lighting.
+Best guess for your 10 s stall: first-time shader compilation (shader cache is now ON, so repeat
+visits should be faster). Unconfirmed - the log has no timestamps.
+
+## 4. Character creation - CLASS SELECT REACHED (04:02)
+`python tools\autopilot.py --stop-at signin --env D1_EMPTY_ROSTER=1` boots straight to
+"CHOOSE YOUR CLASS" (Titan / Hunter / Warlock) - screenshot in
+runs\20261010-040107-WIN-CREATE\shot-040202-signin.png. Next: pick class/race/gender/face with keys
+(✕ = n, ◯ = b, d-pad = arrows), press Finish, and see whether the server's 501 reply leads to orbit
+with a real character - and whether that character gets more than Earth on the map.
+
+## State left (04:03)
+Nothing running. Persistent hosts redirect still ON - run "Undo unattended runs.cmd" when done.
+All shadPS4 source changes: patches\shadps4-all-changes.diff.
+
+## 5. Character creation - WORKS END TO END (10:30, run 20261010-102521-WIN-CREATE2)
+`python tools\autopilot.py --stop-at signin --env D1_EMPTY_ROSTER=1`, then in the creator: cursor
+(left stick = WASD; it is a free cursor that "sticks" to buttons) onto TITAN -> n (✕) -> appearance
+screen -> cursor onto FINISH -> n. Result:
+- game sent investment 501 (class 0 / race 0 / gender 0, online id D1Guardian); server minted SOID
+  0xD100000000000101, wrote create-character-*.txt, account now reports 1 character
+- character:signin -> prologue -> cleanup -> setup:orbit; popups "Crucible unlocked", "Armsday"
+- orbit card: D1Guardian, level 40, Light 385 (the served profile)
+- Director: STILL only Earth, not selectable; corner icons inert. Creation alone does not fix it.
+Note: the appearance preview is black (same lighting bug).
+
+## 6. Director - ACTIVITIES SHOW, TOWER LAUNCH BLOCKED (12:30, run 20261010-104527-WIN-DIR-UNLOCKS)
+Started with `--env D1_UNLOCKS=capture-rig\unlocks\unlocks-200-campaign.bin --env D1_FAMILY42=1`.
+- Why the Director was empty: `cui::c_director_data_component_v2 +0x8C` (the destination the
+  Director wants to show) is 0x575b7710, which is not one of the 9 destination books
+  (Earth 0xA15E9435, Tower book 0x1C36C0EE, 7 gated ones). So the selected index +0x163 stays -1
+  and the panel builds 0 nodes. 0x575b7710 also sits in the director cui_screen_widget +0x248, so
+  it looks like the screen's own parameter leaking in. Root source not yet found.
+- `python tools\director_fix.py [earth|tower]` (Director open) writes a real book hash and forces
+  a rebuild: Earth shows its story/patrol nodes, Tower shows TOWER with its nodes. Screenshot without
+  stealing focus: `python tools\gamewin.py shotbg out.png`.
+- Pressing X on the Tower: "ACTIVITY BANNED - This account is permanently banned from social
+  spaces." No server traffic at all on the press (only 701/702 stats), so it is a client check.
+  Ruled out: activity status bytes in the family 4/type 4 table (all set to 2, still banned),
+  c_banhammer_controller_monitor (it is the idle timer), entitlement (base game owned).
+- Advice received (from the user, quoting what looks like d1preservation's author): "you need to
+  have the investment clock running. you need to author unlocks and entitlements ... almost
+  certainly missing parts of queuez/families". The investment clock lives at
+  `[0x26A3888+8]` +0x408/+0x410 (written by the simulation-queue element
+  `investment_local_time_update`, applier 0x586850). It does advance here, but its base looks like
+  nonsense - a ban window compared against a bad clock is the leading suspect.
+
+## 7. Investment clock - FIXED ON THE SERVER; Director now works without pokes (12:15)
+- The investment clock is family-5 object 5/5 (`0x80801941`, served inside BAP 503/205), field [1]:
+  a u64 right after the family-5 root (registry element `+0x008`), Unix seconds. Client clock
+  (`0x584CB0`) = that base + elapsed cycles / frequency (runtime state `[0x26A3888+8]`, `+0x58`
+  = current investment time). Dawn's family5 codec names the same field `time`.
+- Our server sent that field PRESENT with value 0, so the client's investment time was 1970 + uptime.
+  (The repo's 0x80801941 field map omits this field; its later offsets are struct-relative and fine.)
+- Fix in `d1-server/crates/d1-responder/src/main.rs`: `served_503_body()` / `served_205_body()`
+  splice the current time into bit 230 / bit 70 (position found with the client's own codec via
+  `d1-oracle message --tag 0x80801827 --msgid 205 --obj`; the no-time encode reproduces the shipped
+  205 byte-for-byte). Knob `D1_INVESTMENT_TIME` (default `now`; `0`/`off` = old behaviour; or a
+  number). Startup guard prints `investment time on the wire: <t>`; 205/503 agreement and the
+  controls/test compare with the time slot masked. `cargo test -p d1-responder`: 13/13 pass.
+- Verified run 20261010-120850-WIN-CLOCK: element +8 = current time; with NO memory edits the
+  Director opens on the real SOLAR SYSTEM page (Tower, Earth, Crucible), Earth opens the full
+  Cosmodrome map (missions, patrol, Felwinter Peak). `tools\director_fix.py` is no longer needed.
+- Still open: X on the Tower = "ACTIVITY BANNED - permanently banned from social spaces"
+  (hover card: "Requirements Not Met"). Ruled out: unlock flags (cleared all -> "Trial mode
+  unavailable" instead, set all -> still banned), unlock values, family-5 +0x2DC gate bit,
+  activity status bytes, signon flags, PSN privileges (no such calls). Untested: whether a
+  non-social Earth activity launches.
+
+## 8. Tower from the Director - SELECTABLE, LAUNCH STARTS; stops in matchmaking (13:00)
+Run 20261010-125424-WIN-TOWER131, no memory edits anywhere.
+- The "ACTIVITY BANNED - permanently banned from social spaces" dialog was OUR flags. The click
+  handler (node widget, 0x9DD300) calls the launch validator 0x546B30(ctx, activity); it walks the
+  activity's requirement sets (global table keyed by hash, two expression lists each) and returns
+  the failure reason of the first false expression. Tower = sets 0x6291ABC8 {NOT FLAG 3389,
+  NOT FLAG 308} and 0xC6CD9E47 {419 OR 440, 2667 OR 440}. The repo's shipped ten flags include
+  308 and 3389 -> banned. (Two independent culprits, which is why flag bisection never found one.)
+- "Requirements Not Met" was a different table: each Director entry has status rules, tried from
+  the highest index down, first true wins (0 hidden, 2 not met, 3/4 selectable). Tower entry 0:
+  status 4 if FLAG 131, status 4 if FLAG 3136, else 2. `python tools\director_rules.py 12` prints
+  the rules for any destination with the live flag values (10 = Earth).
+- Server: new responder knob `D1_UNLOCK_FLAGS` (comma list, all granted at value 2; default = the
+  shipped ten). `d1_launch.py --director` / "Launch Destiny (director).cmd" serves
+  98,131,419,440,834,2667,5015,5987,6018 + D1_UNLOCKS + D1_FAMILY42. The in-world shortcut launches
+  keep the old ten (they need 308/3389 for the PvP activity gate).
+- Result: Director -> Tower hover card is clean -> X -> orbit shows "TOWER, The Last City, Earth
+  // Social" with a green LAUNCH -> X on LAUNCH -> world_controller leaves orbit:
+  setup:activity_session_creation -> setup:matchmaking -> "Composition check failed with
+  'big-party-count-exceeds-teams'" -> cleanup -> orbit_loading -> orbit -> repeats forever
+  (screen: dimmed orbit + spinner). NEXT GATE: matchmaking configuration for a social activity
+  (party of 1 vs 0 teams; client_config social_matchmaking_id is 0; BAP 42/43 kind 4 stub).
+- Tools added: tools\hwwatch.py (attach as debugger; hardware data watch or --exec breakpoint
+  with register/memory capture; this is how the validator and the expression were found -
+  ALWAYS pass host address = current base + vaddr, the base changes per run),
+  tools\open_director.py (clears popups, opens Director, hovers Tower),
+  tools\director_rules.py. hwwatch crashed the game once on detach (fixed: drain before detach).
+
+## 9. Matchmaking gate - SOLVED; Tower reached from the Director (13:15)
+Run 20261010-130920-WIN-MM2.
+- The loop was `0xB0A720` returning 12 (`big-party-count-exceeds-teams`): big-party count
+  (`state+0x14`, counted at `0xB09FEA` as parties with size >= `props+0xB0`) > `props+0xC4`
+  (0 for the Tower). `props+0xB0` was 0, so a solo player was a "big party".
+- `props+0xB0` comes from the server: BAP msg 43 field 4 (matchmaking_configuration, 0x420 B,
+  memcpy'd to `matchmaking_iface+0x38` by `0x599F80`), submessage f4.1 "tuning" (descriptor
+  0x15B48B0, 11 fields). `0x5990B0` copies them into every properties struct:
+  f1->+0x08 f2->+0x98 f3->+0x58 f4->+0xB8 f5(u8)->+0x64 f6->+0x5C f7->+0x60 **f8->+0xB0**
+  f9->+0xB4 f10(f32)->+0x130 f11(f32)->+0x40. The responder sent an empty f4.1 (`22 02 0A 00`).
+  This answers the repo's open "[U] who consumes the 0x420 configuration blob".
+- New responder knob `D1_MM_TUNING` (e.g. `8=4`: big party = 4+ players). Tests 13/13.
+  `d1_launch.py --director` now sets it. Only f8 is set; the other ten are still 0 (unknown meaning).
+- With it: "Ready to start criteria met" -> "Teams have been picked" -> setup:activity_host_setup
+  (activity client connects to our AH, startup for activity HASH 0xDF283AFB index 1 = the Tower,
+  join accepted) -> prologue_intro_loading -> orbit_outro -> activity_world_transition ->
+  activity:initial_slice_set_loading, where it waits ("Timeout entering the prologue-filler").
+- From there `python tools\d1_inworld.py --skip-launch` (new flag: no launch poke) finds the done
+  mask already 0x1FF, applies the two hooks + mask 0x7FF, and the game goes physics_join ->
+  activity:in_world in 7 s. Spawn word + fade clear -> Guardian on screen in the Tower plaza, HUD up,
+  walks with W. `python tools\autopilot.py --director` chains all of it (not yet run end to end).
+- STILL BROKEN: crash ~2.5 min after the spawn, access violation at eboot 0xBBDEDE - the SAME
+  address as the old launch-poke route, so it is not caused by the launch method. Lighting unchanged.
+- Remaining pokes on this route: the two hooks (0x10C500 lifetime-state getter, 0x411E16 reject),
+  done mask 0x7FF, spawn word, fade block. Everything before in_world is now served, not poked.
+
+## 10. The in-world crash - EXPLAINED AND AVOIDED (14:30)
+- What killed every in-world session after 1-3 min was NOT the spawn itself: the game logs
+  `Prerequisite 'ENUM(1)' failed for reason 'error.inactivity_timed_out'` and tears the world down
+  (the normal idle kick, 0x792210: idle STICK time > 5/15/60 min by activity kind, counted from
+  the last stick move - which in unattended runs was in orbit). The teardown then crashed on
+  hand-made state: hooked biped -> 0xBBDEDE; hand-linked slot -> 0x119321 (slot pool already
+  unloaded). Caught with tools\crashwatch.py (stays attached, prints the fatal AV + registers).
+- Optional patch added to patches\CUSA00219-windows.xml: "never kick for inactivity"
+  (0x792302 `ja` -> 2 NOPs). With it an untouched session ran 8+ min and was still controllable.
+- Why the repo's two code hooks were needed, answered (its open "[U] which other leg refused"):
+  the spawn gate 0x414730 -> 0x1192A0 needs the player's "player array" element (0x2670940,
+  20 x 0x1C0) to carry a definition tag at +0x50. It is set by 0x1195E0 (setter 0x3011F0), which
+  scans the world's 30 kind-12 objects (schema 0x80802236 = one slot per possible player) for the
+  one whose owner id (slot+0x258) equals the player's id, then writes the player handle to
+  slot+0x1F0 (0x1293D0). All 30 owners are 0: our activity host never assigns a slot.
+  The gate also needs slot+0x221 != 0 (block at slot+0x218) and lifetime phase in {3,6}.
+- NO-HOOK ROUTE (code segment untouched except the XML patches):
+  `tools\nohook_inworld.py` (phase byte = 3 via the getter's own pointer, done mask 0x7FF) then
+  `tools\link_player_slot.py` (slot+0x1F0 = handle, slot+0x220 = 01 01, element+0x50 = slot tag,
+  spawn word, fade). The REAL gate passes, the Guardian spawns, "Team voice channel now
+  available" appears. `python tools\autopilot.py --director` does boot -> Director -> LAUNCH ->
+  this, in ~2 m 50 s (run 20261010-142459-WIN-ONECMD).
+- Still pokes, to be served by the activity host instead: lifetime phase (repo has
+  D1_AH_SENSOR_PHASE / udt 5 for it, untested here; name hash + gen are per-world), the player
+  slot (same sensor mechanism: the slot record has setters bound at +0x28/+0x48/+0x88/+0xA8/
+  +0x1B0/+0x1D0), done-mask tasks 9/10, spawn word, fade.
+- Director scripts are now closed-loop: tools\cursor.py finds the free cursor (closed ring r=26,
+  dark inside) and steers it via the empty middle band; open_director.py / launch_tower.py use it.
+- Gotcha that cost an hour: a timed-out command kept running in the background and later ran the
+  same pokes a second time (double spawn -> instant 0xBBDEDE). One driver per session.
+
+## 11. Lighting - MAIN CAUSE FOUND: it was night. Ambient-in-shadow still missing (14:45)
+- c_time_of_day_game_system (object eboot 0x2943E40, state at [+8]): +0 fraction of day,
+  +4 day length (7200 s in the Tower), +8 game seconds at last tick, +0xC paused. Each tick adds
+  elapsed/length (0x8B47C0). Nothing ever sets it for us, so the day starts at 0.0 = MIDNIGHT when
+  the activity starts; every session so far was looked at during the first ~10 minutes = deep
+  night. That is what the section-2 diagnosis measured (sun/sky terms ~1e-13): correct for night.
+- `python tools\time_of_day.py 0.5` -> blue sky, sunlit paving, correct sun shadows
+  (runs\20261010-142459-WIN-ONECMD\tod050.png). link_player_slot.py now sets 0.45 on arrival
+  (`--keep-night` to skip). Write ONLY the fraction: also writing +8 makes the next tick subtract
+  the difference back out (cost one wrong "no effect" conclusion).
+- How the real game sets it: the lifetime-record setter 0x11DE30 (the udt-5 sensor value that
+  also carries the lifetime phase) calls 0x8B46C0(record+0x680) when record+0x67C != 0. So the
+  activity host should send time of day in the same frame as the phase. global_activity_state
+  +0x520 ("time base") is NOT it: poking it changed nothing.
+- STILL WRONG at noon: anything in shadow is pure black (no sky/bounce light) and there is colour
+  banding (day3.png). Sun-lit surfaces are right. Separate problem - renderer-side or a missing
+  ambient input; needs a RenderDoc capture taken at noon (`autopilot.py --director --renderdoc`,
+  then time_of_day.py 0.5, then touch capture.trigger).
+
+## 12. Shadows - one real renderer bug fixed (shadPS4), more remains (15:25)
+- Return-to-orbit crash (user, "hold triangle"): same 0x119321 teardown crash. Fixed by
+  tools\slot_guard.py (started by link_player_slot.py): unlinks player element+0x50 the instant
+  the game leaves activity:in_world. Verified: Ghost -> hold triangle -> clean return to orbit.
+- Time-of-day sweep (tools\time_of_day.py, 20 steps): brightest at 0.45-0.55; even at noon ~40%
+  of the frame near-black. So it is not "wrong time" any more.
+- RenderDoc noon frame (runs\20261010-144838-WIN-SHADOW\noon.rdc): the light accumulation
+  buffers (7311/7313) are exactly 0 in shade - the game's own lighting adds no sky/ambient there.
+- SEPARATE REAL BUG found and fixed: the final colour-grading 3D LUT (32x32x32, built as four
+  copies of 8 slices) had slices 0-7 all zero, so every dark colour graded to black. shadPS4's
+  SanitizeCopyLayers FORCED a 2D->3D copy's layer count up to the full volume depth (8 -> 32),
+  an invalid copy that dropped the first batch. Now only clamps down. Patch:
+  patches\shadps4-lut-partial-volume-copy.diff (also in shadps4-all-changes.diff). Rebuilt.
+  Same view at noon: near-black 41% -> 34%, shadows show detail.
+- Still to do: why the ambient term is 0 in shade. Candidates: the probe/irradiance volumes (many
+  32x32x32 / 32x32x16 3D textures in the frame - same family of 2D/3D handling as the LUT), or
+  content the server should drive. Next step: dump those volumes from the capture and check for
+  empty slices like the LUT had.
+
+## 13. Black shadows - root cause narrowed to ONE render pass (16:10)
+Capture runs\20261010-144838-WIN-SHADOW\noon.rdc (noon, pre-LUT-fix build). Tools added to
+tools\rdc_survey.py, driven by `python tools\rdc_run.py <rdc> <out> '<json job>'`:
+pick (pixel values, any slice), history (pixel history), bufwatch, apievents, shader
+(disassembly + blend/depth state), debugpixel.
+- Light accumulation (7311/7313) is a normal deferred sun + local lights buffer: 0 in shade is right.
+- Ambient/sky light is applied in the composite (eid 13876, shader 3975) and multiplied by
+  `1 + s*(mask*k - 1)` with mask = lerp(A, 1, R) of render target 7287 (R8G8B8A8, 1920x1080).
+  mask = 0 -> ambient factor ~0 -> shadows black. 7287.R and .A are 0 EVERYWHERE in the frame.
+- 7287 history at any pixel: eid 5384 clears it to (1,1,1,1) [= fully visible]; eid 5421 (shader
+  1719: 9-tap PCF against the 1536x1536 depth map 7282, constants k=16797, slope 1) leaves it at
+  (0,0,0,0) = "fully shadowed"; later passes (8977, write mask G|B) only rewrite G/B (AO).
+  RenderDoc flags the 5421 fragments as depth-test-failed yet the value changes, and its shader
+  debugger cannot trace them - so the PCF/visibility pass is where it goes wrong, inside shadPS4
+  (depth compare / shadow-map depth convention / volume depth test), not in game data.
+- The "1e-13 sky constants" from section 2 are NOT the problem: they are height-fog density at the
+  Tower's altitude, computed by the game's material-constant VM (0x827680, table 7 inputs at
+  eboot 0x26D5780; fog writer 0x841240: density *= exp(min(64, falloff*(h-base)*-0.001)),
+  falloff 42, base height -627). Correct values.
+- Next: get the scene depth vs box depth at one pixel for eid 5421 and the 7282 shadow-map depth
+  the PCF reads, to see which comparison shadPS4 gets backwards.
+
+## 14. Lifetime phase now SERVED by the activity host - no poke (17:00)
+The lead's advice was "stop poking your character in". First poke removed: the lifetime phase (record+0x1AC).
+- The udt-5 sensor_auth_update was already decoded and applied (gen 0 matched world+0x1D, the
+  name-ref resolved to the Tower's lifetime slot, and the slot was marked dirty at 0x2D05C0). But the
+  setter post-pass never ran: `0x2D0B70` (called at 0x2D062A) returns 0 while ANY replicated sensor
+  slot still awaits its initial state (slot+0x15 != 0) and is local-owned or unowned
+  (owner == local, or > 0x7F; only remote-peer-owned slots are skipped).
+- The Tower has 99 such slots: 64 in group 0x8d3f1166 (owner 0) and 35 in groups 0x40aebf90 /
+  0xf2d88bd0 (owner -1), including the 30 kind-12 PLAYER SLOTS (0x40aebf90, i8 12, sub 4..33, value
+  schema 0x808022a5). Names and slot indices are identical across boots.
+- Fix, in the server: d1-oracle `SensorPhaseUpdate.init` + AH knob `D1_AH_SENSOR_INIT=<file>`.
+  The udt-5 frame carries one entry per slot with fresh=1 (the client default-inits it) and
+  presence=0 (the change-mask bit "nothing changed", read at 0x2C91BA), plus a 0 bit for a second
+  part. No values are invented. Manifest: `capture\tower-sensor-init.txt` (99 lines). Frame:
+  1182 bytes.
+- Result (run 20261010-165533-WIN-SENSORINIT2): phase byte 0xFF -> 03 via the game's own setter,
+  dirty slots 0, with no hooks or pokes. `d1-oracle sensor controls`: 11/11 still byte-exact.
+- Still poked: the rung-34 done mask is naturally 0x1FF, and task 9 waits on leg A = the player-slot
+  assignment (0x1192A0), the same as the spawn gate. Join counter is naturally 0. Next to serve:
+  the player-slot value (schema 0x808022a5, sub 4 = first slot) over the same udt-5 channel.
+- Build: `C:\d1server\d1preservation\build-server.bat -p d1-activity-host` (needs C:\Program
+  Files\CMake\bin on PATH for unicorn-engine-sys; the script sets it).
+
+## 15. GUARDIAN IN THE TOWER WITH ZERO POKES - all served by the activity host (17:25)
+Run 20261010-172236-WIN-FULLSERVED: `python tools\autopilot.py --director` boots, opens the
+Director, launches the Tower, and the game spawns the Guardian at 10.8 h daylight. No memory
+writes or hooks at all. Remaining code patches: only the XML (boot heartbeat NOP, idle-kick NOP).
+"Team voice channel now available" now appears too.
+What the AH sends (one udt-5 frame, repeated every 5 s for 2 min; d1_launch.py --director sets it):
+- the initial state of the 99 sensor slots (section 14);
+- lifetime phase 3, plus time of day (value field [10] +0x4D0 = 1, [11] +0x4D4 = 0.45; the setter
+  0x11DE30 calls the c_time_of_day setter) - knob D1_AH_SENSOR_TIME_OF_DAY;
+- player slot sub 4 (= kind-12 slot 0) seated: value schema 0x808022a5 with owner (+0x40, kind
+  0x23 = full 64-bit id) = profile SOID 0xD100000000000201, +0x08/+0x09 = 1, +0x38 = 0. The
+  client's linker then fills slot+0x1F0 / element+0x50 itself. +0x38 must equal the client's
+  (i8)players[i]+0x738 (0), or the client never sets its own ready flag slot+0x299 (0x408D30) and
+  the spawn gate (0x1192A0 -> slot+0x290 block) refuses forever - knob D1_AH_SENSOR_PLAYER_SLOT.
+- d1-oracle needed kind 0x23 support: crate::runtime_ids seeds the two BSS id-schema tag records
+  (0x808004AC compact / 0x80801932 full, derived statically) and the client's id-mode flag object
+  (live client: full ids). All oracle/AH controls still pass (sensor 11/11, AH 112).
+Done mask reaches 0x7FF and the fade lifts naturally. Untested: returning to orbit (the slot_guard
+poke is no longer started; the state is real now, so the old teardown crash may be gone).
+
+## 16. Walking between Tower bubbles works (18:15)
+Stall was "Region 'PRV24.24' is ready for switch, but we do not yet have valid host-tabulated data
+for it. Waiting." + "player was held ... [matchmaking IN-PROGRESS]".
+- The client reports its pending transition to the AH in udt 21 client_authoritative_data_update
+  (+0x158 = pending region, 10 bits; +0x1F8 = token), byte-identical to sstm+0x138 / +0x1D0.
+  The AH now decodes udt 21 seeded (it is a replicated delta) and follows it.
+- But an answer sent after the client asks is too late: FUN_007775B0 scans the PAH array once per
+  transition, and again only when the membership's member count (+0x00, read via ac+0xE70)
+  changes. The client held {0x18, 2} in ac+0x3CB8 and still waited.
+- Fix: the AH tabulates ahead (ReplicateMembership::set_pah_table). It publishes the current
+  {region, token} plus every bubble region (bubble*8) with token+1, and re-publishes when udt 21
+  reports a new token. Verified by the user, run 20261010-180828-WIN-BUBBLES2: PRV24 / PRV16
+  crossings load through, and the matchmaking hold cleared with it. AH controls 112/112.
+
+## 17. The sensor slots are CONTENT - the server derives them itself (19:15)
+No more measured Tower inputs. `d1_oracle::world_sensors::derive(world_tag, bubble)`:
+- world record (city_tower_default1 = tag 0x80C7A005, class 0x8106216F): +0x0C = the activity
+  checksum (0x7F0057BE), +0x70 bubble count, +0x80 bubble table {region hash, 1, off} stride 0x18,
+  body at entry+off+0x50 = {region hash, bubble content tag}. Region hashes are the ones in the
+  log (f28fc859 = PRV00, 61974e44 = PRV16, 1ad5e415 = PRV24).
+- bubble content (class 0x808008F0) -> bubble definition -> group tags (class 0x8080076E).
+  Bubble 0's definition lists exactly the five groups the client loads (FUN_00345250 ->
+  FUN_00106D60 copies hash = [group+0xC] into the world's group table).
+- group entry: +0x0C hash, u16 +0x10 replicated count, +0x50 member count, members @+0x60
+  stride 0x10 {kind,...}; the tail holds the member NAMES.
+  40aebf90 = scoreboard, lifetime_timer, lifetime, new_user_experience, players x30.
+  8d3f1166 = obj_patrol_lower/upper, sq_boulevard_vendor_*, sq_boulevard_civ_* ... (kind 3 =
+  objective, 1 = squad, 2 = squad member, 40 = ?).
+- record entries (class 0x80800861, in the world package and the packages the groups reference):
+  own name-ref {group hash, kind u8, 0, sub i16}, then +0x14 part-2 tag, +0x18 value tag.
+- Result for the Tower: 100 slots, 100/100 identical to the live measurement, ~8 s.
+- AH knob D1_AH_SENSOR_WORLD=0x80c7a005 (+ D1_AH_SENSOR_PLAYER_SLOT=auto) replaces
+  D1_AH_SENSOR_INIT and the three NAME knobs; d1_launch.py --director uses it. Verified run
+  20261010-191107-WIN-DERIVED: spawned, phase 3, 10.8 h. AH controls 112/112.
+- LEAD for the "empty world": the 64 slots of group 8d3f1166 are the Tower's objectives and NPC
+  squads, and the AH is their authority. Vendors/civilians are probably spawned by the host sending
+  values on those slots (schemas: kind 1 0x8080071E/0x80800357, kind 2 0x80800868/0x808005D9,
+  kind 3 0x808004FA/0x80800830, kind 40 0x80800556).
+- Other bubbles add their own group (PRV16 19d43443 + 2318ee6c, PRV24 8cc31436); their slots are
+  not initialised by us yet - harmless so far, relevant once those squads matter.

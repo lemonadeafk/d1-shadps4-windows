@@ -1,0 +1,209 @@
+"""Unattended Tower session: launcher -> title screen -> settings screens -> orbit -> in-world.
+
+    python tools\\autopilot.py                 # start a session and drive it into the Tower
+    python tools\\autopilot.py --stop-at orbit # stop driving once in orbit
+    python tools\\autopilot.py --kill          # end the running session (launcher cleans up)
+
+Needs the persistent hosts redirect ("Allow unattended runs.cmd"), otherwise the launcher would
+wait for an admin click. Screenshots of each stage land in the run folder as shot-*.png.
+"""
+
+import argparse
+import glob
+import os
+import re
+import subprocess
+import sys
+import time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+RUNS = r"C:\d1server\d1preservation\runs"
+sys.path.insert(0, HERE)
+import gamewin  # noqa: E402
+import winproc  # noqa: E402
+
+TOWER_ARGS = ["--inworld", "--world", "city_tower_default1", "--checksum", "0x7f0057be",
+              "--bubbles", "5", "--chosen", "0-4"]
+
+
+def log(msg):
+    print(f"[auto] {time.strftime('%H:%M:%S')} {msg}", flush=True)
+
+
+def latest_run(after):
+    runs = [r for r in glob.glob(os.path.join(RUNS, "*-WIN*")) if os.path.getctime(r) >= after]
+    return max(runs, key=os.path.getctime) if runs else None
+
+
+def states(run):
+    try:
+        with open(os.path.join(run, "guest-stdout.log"), encoding="utf-8", errors="replace") as f:
+            return re.findall(r"Entering state '([^']+)' for reason '([^']+)'", f.read())
+    except OSError:
+        return []
+
+
+def shot(run, label):
+    try:
+        p = gamewin.shot(os.path.join(run, f"shot-{time.strftime('%H%M%S')}-{label}.png"))
+        log(f"screenshot {os.path.basename(p)}")
+        return p
+    except BaseException as e:  # noqa: BLE001 - a missing screenshot must not end the session
+        log(f"screenshot failed: {e}")
+        return None
+
+
+def kill():
+    for pid in winproc.emu_pids():
+        subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True)
+    log("shadPS4 killed; the launcher restores settings and stops the servers")
+
+
+def drive(name, stop_at, timeout, extra=(), inworld_args=()):
+    if winproc.emu_pids():
+        raise SystemExit("an emulator is already running - refusing to start a second one")
+    t0 = time.time()
+    # Outside our process tree/job: stopping the autopilot must never kill the session (it did on
+    # 2026-10-10 - the launcher died with it and could not restore shadPS4's settings).
+    flags = subprocess.CREATE_NEW_CONSOLE | subprocess.CREATE_NEW_PROCESS_GROUP | 0x01000000  # BREAKAWAY_FROM_JOB
+    cmd = [sys.executable, os.path.join(ROOT, "d1_launch.py"), *TOWER_ARGS, "--name", name, *extra]
+    try:
+        subprocess.Popen(cmd, cwd=ROOT, creationflags=flags)
+    except OSError:
+        log("job breakaway refused - launching inside our job instead")
+        subprocess.Popen(cmd, cwd=ROOT, creationflags=flags & ~0x01000000)
+    run = None
+    while not run and time.time() - t0 < 60:
+        time.sleep(1)
+        run = latest_run(t0)
+    if not run:
+        raise SystemExit("launcher never created a run folder")
+    log(f"run {run}")
+    pressed, last, shots = 0, None, set()
+    end = time.time() + timeout
+    while time.time() < end:
+        st = states(run)
+        cur = st[-1] if st else (None, None)
+        if cur != last:
+            log(f"state {cur[0]} ({cur[1]})")
+            last = cur
+        state, reason = cur
+        if state == "cleanup" and reason and reason.startswith("error."):
+            shot(run, "error")
+            raise SystemExit(f"client gave up: {reason}")
+        if not winproc.emu_pids() and time.time() - t0 > 30:
+            raise SystemExit("shadPS4 is not running")
+        if state == "bootflow:start" and not any(s == "bootflow:platform_signin" for s, _ in st):
+            if "title" not in shots and time.time() - t0 > 20:
+                shot(run, "title")
+                shots.add("title")
+            gamewin.key("n")                     # the title screen's "press X"
+            pressed += 1
+            time.sleep(3)
+            continue
+        if state == "bootflow:profile_setup":
+            # The first-run screens (screen bounds, brightness - which takes ◯, not ✕) are a counter
+            # at static BSS 0x26B4070+0x38; 0x79E830 treats > 6 as done and requests
+            # prepare_for_orbit (d1preservation status/TODO.md "UNATTENDED RUNS", 2/2 runs).
+            if "settings" not in shots:
+                time.sleep(3)
+                shot(run, "settings")
+                shots.add("settings")
+                r = subprocess.run([sys.executable, os.path.join(HERE, "d1guest_win.py"), "poke",
+                                    "0x26B4070", "7", "--type", "u32", "--offset", "0x38",
+                                    "--experiment", "autopilot-profile-setup-skip", "--confirm"],
+                                   cwd=ROOT, capture_output=True, text=True)
+                log("profile_setup counter -> 7: " + ("OK" if " OK" in r.stdout else
+                                                      "FAILED " + (r.stdout + r.stderr)[-300:]))
+            time.sleep(2)
+            continue
+        if stop_at == "signin" and state == "character:signin":
+            time.sleep(8)
+            shot(run, "signin")
+            log("at character:signin - stopping here as asked")
+            return run
+        if state == "setup:orbit":
+            time.sleep(5)
+            shot(run, "orbit")
+            log(f"in orbit after {time.time() - t0:.0f} s and {pressed} key press(es)")
+            if stop_at == "orbit":
+                return run
+            if "--skip-launch" in inworld_args:
+                # Director route: pick the Tower and press LAUNCH like a player; the game leaves
+                # orbit by itself and d1_inworld.py only does the post-launch steps.
+                log("director route: Set Destination -> Tower -> LAUNCH")
+                subprocess.run([sys.executable, os.path.join(HERE, "launch_tower.py"),
+                                os.path.join(run, "director")], cwd=ROOT, check=True)
+                while time.time() < end and "activity:initial_slice_set_loading" not in last_state(run):
+                    time.sleep(2)
+                # Nothing is poked on this route: the activity host serves the lifetime phase and
+                # seats our player in a slot (d1_launch.py --director), and the game spawns the
+                # Guardian through its own gates (NIGHT-NOTES section 14).
+                while time.time() < end and "activity:in_world" not in last_state(run):
+                    time.sleep(2)
+                time.sleep(8)
+                shot(run, "inworld")
+                log(f"state {last_state(run)}; in the Tower via the Director with no pokes")
+                return run
+            proc = subprocess.Popen([sys.executable, os.path.join(HERE, "d1_inworld.py"), *inworld_args], cwd=ROOT,
+                                    stdout=open(os.path.join(run, "inworld.log"), "w"),
+                                    stderr=subprocess.STDOUT, env=dict(os.environ, PYTHONUNBUFFERED="1"))
+            while time.time() < end:
+                time.sleep(2)
+                text = open(os.path.join(run, "inworld.log"), encoding="utf-8", errors="replace").read()
+                if "holding the curtain suppress" in text:
+                    time.sleep(5)
+                    shot(run, "inworld")
+                    log("in world; in_world script is holding the curtain suppress")
+                    return run
+                if proc.poll() is not None:
+                    shot(run, "inworld-failed")
+                    raise SystemExit("d1_inworld.py ended early - see " + os.path.join(run, "inworld.log"))
+            break
+        time.sleep(1)
+    shot(run, "timeout")
+    raise SystemExit(f"timed out in state {last}")
+
+
+def last_state(run):
+    """The newest world-controller state named in the guest log."""
+    try:
+        text = open(os.path.join(run, "guest-stdout.log"), encoding="utf-8", errors="replace").read()
+    except OSError:
+        return ""
+    i = text.rfind("Entering state '")
+    return text[i:i + 80] if i >= 0 else ""
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--stop-at", choices=["signin", "orbit", "inworld"], default="inworld")
+    ap.add_argument("--env", action="append", default=[], help="passed to d1_launch.py --env")
+    ap.add_argument("--name", default="AUTO")
+    ap.add_argument("--timeout", type=float, default=900)
+    ap.add_argument("--kill", action="store_true")
+    ap.add_argument("--gpu", action="append", default=[], help="passed to d1_launch.py --gpu")
+    ap.add_argument("--renderdoc", action="store_true", help="passed to d1_launch.py")
+    ap.add_argument("--no-spawn", action="store_true", help="passed to d1_inworld.py")
+    ap.add_argument("--director", action="store_true",
+                    help="reach the Tower the real way: Director -> Tower -> LAUNCH (no launch poke)")
+    a = ap.parse_args()
+    import ctypes
+    ctypes.windll.user32.SetProcessDPIAware()
+    if a.kill:
+        kill()
+        return 0
+    extra = [x for g in a.gpu for x in ("--gpu", g)] + (["--renderdoc"] if a.renderdoc else [])
+    extra += [x for e in a.env for x in ("--env", e)]
+    inworld_args = ["--no-spawn"] if a.no_spawn else []
+    if a.director:
+        extra += ["--director"]
+        inworld_args += ["--skip-launch"]
+    run = drive(a.name, a.stop_at, a.timeout, extra, inworld_args)
+    print(f"RUN {run}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

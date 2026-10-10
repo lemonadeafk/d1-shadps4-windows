@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Destiny 1 (PS4) CUSA00219 patch 01.29 - fixes needed to boot under shadPS4 on Windows.
+
+  Apply with:  shadPS4.exe -p <this file> -g <game>\eboot.bin
+  shadPS4 accepts only one -p, so every Windows fix lives in this one file as its own <Metadata>.
+
+  Address convention (same as d1preservation/patches): Address = eboot vaddr + 0x400000.
+  AppVer MUST match param.sfo APP_VER ("01.29") or the lines are silently skipped.
+  AppElf MUST be "eboot.bin": current shadPS4 (memory_patcher.cpp) skips any <Metadata> whose
+  AppElf differs from the loaded executable's name, also silently. d1preservation's patch files
+  predate this and lack it, so they need it added before use with a current build.
+  Eboot: sha256 7271fcb926401df8defb126cb8eb2b247134138b81e401bbacb2ab60791b7954.
+-->
+<Patch>
+
+  <!--
+    Graphics Heartbeat crash at eboot 0xFAAF4 ("read from address 0x8").
+
+    The heartbeat thread (entry 0x7E47A0) waits for the GPU to finish a frame in 0x7DB200:
+
+      7db54a  frames_submitted = [[r14]+0xBC]; frames_done = [[0x26CB4D0+0x20]]
+      7db560  cmp / jns done
+      7db564  call 0xFB860        ; GPU behind: "help out" by running a job-system job
+      7db569  test al,al / jne 7db54a
+      7db56d  jmp 7db540          ; else usleep(300) and re-check
+
+    0xFB860 -> 0xFAAC0 reads the job-system worker context from TLS+0x58 (getter 0xFC520). Only
+    job workers set it (0xFAD30), and the heartbeat is not one, so it is NULL and [NULL+8] faults.
+    On hardware the GPU is never behind here, so the call never happens; under emulation it is,
+    every boot. d1preservation saw the same fault on Linux under CPU load (status/shadps4.md).
+
+    Fix: replace the call with "no job ran" (al = 0), so the loop takes its own sleep-and-retry
+    branch. e8 f7 02 92 ff  ->  31 c0 (xor eax,eax)  0f 1f 00 (3-byte nop).
+  -->
+  <Metadata Name="Heartbeat GPU wait: skip job-steal on non-worker thread"
+            isEnabled="true" AppVer="01.29" AppElf="eboot.bin" Author="shadgames" PatchVer="1.0">
+    <PatchList>
+      <Line Type="bytes" Address="BDB564" Value="31C00F1F00"/>
+    </PatchList>
+  </Metadata>
+
+  <!--
+    The three entries below are copied verbatim (plus AppElf) from the enabled set in
+    d1preservation/patches/CUSA00219-lab-manifest-T1.xml, which is what its run-boot.sh uses.
+    Rationale and byte derivations: d1preservation design/guest-diagnostics.md and
+    design/content-manifest-gate.md. Original bytes checked against this eboot on 2026-10-10:
+      0xE4AD0 = 55 48 89 E5 ... (function start), 0xE4DA0 = 48 8D 05 ... (function start),
+      0x18C4974 = 01 (manifest RSA-envelope flag).
+  -->
+  <Metadata Name="D1 diagnostics: route retail_log sink to stdout (REQUIRED)"
+            isEnabled="true" AppVer="01.29" AppElf="eboot.bin" Author="guest-diag" PatchVer="1.0">
+    <PatchList>
+      <Line Type="bytes" Address="4E4AD0" Value="488D3DF907520130C0E972891B01"/>
+    </PatchList>
+  </Metadata>
+
+  <Metadata Name="D1 diagnostics: threshold T=1 (1534 sites, 95%)"
+            isEnabled="true" AppVer="01.29" AppElf="eboot.bin" Author="guest-diag" PatchVer="1.0">
+    <PatchList>
+      <Line Type="bytes" Address="4E4DA0" Value="83FE010F9DC0C3"/>
+    </PatchList>
+  </Metadata>
+
+  <!-- CLIENT MODIFICATION: bypasses the CDN content-manifest RSA envelope so the game accepts the
+       manifest our own server builds (only Bungie could sign one). -->
+  <Metadata Name="D1 lab: accept UNSIGNED cdn content manifest (client modification)"
+            isEnabled="true" AppVer="01.29" AppElf="eboot.bin" Author="content-manifest-gate" PatchVer="1.0">
+    <PatchList>
+      <Line Type="bytes" Address="1CC4974" Value="00"/>
+    </PatchList>
+  </Metadata>
+
+  <!-- CLIENT MODIFICATION, optional (set isEnabled="false" to get stock behaviour back).
+       The world controller's inactivity prerequisite (0x792210) sends the player back to orbit
+       with error.inactivity_timed_out after 5-60 min without STICK movement (button presses do
+       not count; tunables at [0x267B1B8]+0x30F0+0x94..0xA0, in ms). Unattended test runs hit it
+       ~2 min after arriving, and while parts of the in-world state are still hand-made the
+       teardown that follows crashes the client (0xBBDEDE / 0x119321). The final "idle > timeout"
+       branch at 0x792302 (ja +0x0A, bytes 77 0A) is replaced by two NOPs, so the check always
+       reports "not timed out". Address = vaddr + 0x400000. -->
+  <Metadata Name="D1 lab: never kick for inactivity (client modification)"
+            isEnabled="true" AppVer="01.29" AppElf="eboot.bin" Author="shadgames" PatchVer="1.0">
+    <PatchList>
+      <Line Type="bytes" Address="B92302" Value="9090"/>
+    </PatchList>
+  </Metadata>
+
+</Patch>

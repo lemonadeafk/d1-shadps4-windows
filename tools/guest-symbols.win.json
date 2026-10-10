@@ -1,0 +1,48 @@
+{
+  "_about": "Minimal reconstruction of d1preservation's capture-rig/guest-symbols.json, which the public repo references but does not ship. Every entry names where its value came from. Built 2026-10-10 for the Windows port (shadgames/tools/d1guest_win.py).",
+  "build": {
+    "sha256": "7271fcb926401df8defb126cb8eb2b247134138b81e401bbacb2ab60791b7954",
+    "eboot": "dumps/patch-01.29-CUSA00219/eboot.bin",
+    "source": "BOOTSTRAP.md pinned target; matches this machine's dump"
+  },
+  "anchors": [
+    {"name": "job_system_init", "vaddr": "0x1003D0", "len": 64,
+     "source": "fn 0x1003D0 (calls the worker entry 0xFAD30); unique in the eboot, no 0x64 TLS prefix, not patched"},
+    {"name": "heartbeat_thread_entry", "vaddr": "0x7E47A0", "len": 64,
+     "source": "Graphics Heartbeat thread entry (created at 0x7E4786); unique, no TLS prefix, not patched"}
+  ],
+  "verify": {"vaddr": "0xFAD30", "len": 48,
+             "source": "job worker entry that sets TLS ctx (0xFAD66 -> 0xFC540); unique, shifted window differs"},
+  "liveness": {
+    "account_family": 4,
+    "account_type": 0,
+    "account_soid": "0xD100000000000001",
+    "source": "d1guest.py usage text (obj 4:0 = the account object); D1_ACCOUNT_SOID default in run-boot.sh"
+  },
+  "registry_layout": {
+    "entry_table_base": "0x4F800",
+    "entry_stride_family": "0x60",
+    "entry_stride_type": "0x10",
+    "element_base": "0x40A0",
+    "confidence": "C for family 4/0 only",
+    "source": "d1-live/src/fixture.rs fallback values (the real file was not published). Verified live 2026-10-10 in orbit: `live` L3 PASS, account fam4/t0 key == 0xD100000000000001 through this layout. Other families unchecked (no static family table)."
+  },
+  "families": [],
+  "structs": {},
+  "symbols": [
+    {"name": "object_registry_ptr", "vaddr": "0x26A2040", "confidence": "C",
+     "source": "design/eboot-map.md row 0x26A2040 'the object registry'; d1-live addr.rs test"},
+    {"name": "package_registry_global", "vaddr": "0x1A0B420", "confidence": "C",
+     "source": "capture-rig/scenario-checksum.py docstring, FUN_00299100 disasm: lea rcx,[rip+0x17722ae] -> 0x1A0B420 'the package/tag registry global'; mov rcx,[rcx]; mov rsi,[rcx] = registry base (d1guest.package_registry reads it the same two-deref way)"},
+    {"name": "fade_block_ptr", "vaddr": "0x2694B90", "confidence": "C",
+     "source": "design/GUARDIAN-IN-WORLD.md: [0x2694B90] -> fade block (+0x00 count, +0x14 mode, +0x18 alpha)"},
+    {"name": "flyin_suppress_ptr", "vaddr": "0x26A33E8", "confidence": "C",
+     "source": "design/GUARDIAN-IN-WORLD.md: [0x26A33E8] deref byte0 = 1, held every ~2 s"},
+    {"name": "player_chain_root", "vaddr": "0x2725700", "confidence": "C",
+     "source": "design/GUARDIAN-IN-WORLD.md: spawn word player[0]+0x0C via [[0x2725700]+8]+0x80"},
+    {"name": "character_selection_manager", "vaddr": "0x26A3890", "confidence": "C",
+     "source": "status/TODO.md: character:signin node at *(0x26A3890)"},
+    {"name": "profile_setup_config_block", "vaddr": "0x263D0F8", "confidence": "C",
+     "source": "d1guest.py docstring"}
+  ]
+}

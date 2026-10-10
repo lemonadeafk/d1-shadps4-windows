@@ -1,0 +1,13 @@
+# The game itself - never commit. Everyone needs their own disc + 01.29 patch dump.
+CUSA00219-129/
+CUSA00219-UPDATE/
+*.pkg
+eboot.bin
+
+# generated / per-machine
+__pycache__/
+*.pyc
+tools/rdc_survey.json
+*.rdc
+*.png
+runs/

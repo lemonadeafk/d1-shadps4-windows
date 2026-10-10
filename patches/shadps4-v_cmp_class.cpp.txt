@@ -1,0 +1,44 @@
+void Translator::V_CMP_CLASS_F32(const GcnInst& inst) {
+    const IR::F32 src0{GetSrc<IR::F32>(inst.src[0])};
+    const IR::U32 src1{GetSrc(inst.src[1])};
+    IR::U1 value;
+    if (src1.IsImmediate()) {
+        // GCN's class mask is an arbitrary subset of ten float classes, so build the predicate per
+        // bit instead of matching a few whole groups. The stock code only handled masks containing
+        // ALL of NaN, ALL of Infinity or ALL of Negative, and hit UNREACHABLE on anything else -
+        // Destiny 1 (CUSA00219 01.29) uses a quiet-NaN-only mask (0x2) while loading its first world.
+        // Signalling and quiet NaN cannot be told apart in a shader, nor can denormals from normals
+        // once denormals are flushed, so each of those pairs shares one test.
+        const u32 mask = src1.U32();
+        const auto has = [mask](IR::FloatClassFunc bit) { return (mask & static_cast<u32>(bit)) != 0; };
+        const IR::U32 bits{ir.BitCast<IR::U32>(src0)};
+        const IR::U1 is_inf{ir.FPIsInf(src0)};
+        value = ir.Imm1(false);
+        const auto add = [&](const IR::U1& term) { value = ir.LogicalOr(value, term); };
+        if (has(IR::FloatClassFunc::SignalingNan) || has(IR::FloatClassFunc::QuietNan)) {
+            add(ir.FPIsNan(src0));
+        }
+        if (has(IR::FloatClassFunc::NegativeInfinity)) {
+            add(ir.LogicalAnd(is_inf, ir.FPLessThan(src0, ir.Imm32(0.f))));
+        }
+        if (has(IR::FloatClassFunc::PositiveInfinity)) {
+            add(ir.LogicalAnd(is_inf, ir.FPGreaterThan(src0, ir.Imm32(0.f))));
+        }
+        if (has(IR::FloatClassFunc::NegativeNormal) || has(IR::FloatClassFunc::NegativeDenorm)) {
+            add(ir.LogicalAnd(ir.LogicalNot(is_inf), ir.FPLessThan(src0, ir.Imm32(0.f))));
+        }
+        if (has(IR::FloatClassFunc::PositiveNormal) || has(IR::FloatClassFunc::PositiveDenorm)) {
+            add(ir.LogicalAnd(ir.LogicalNot(is_inf), ir.FPGreaterThan(src0, ir.Imm32(0.f))));
+        }
+        if (has(IR::FloatClassFunc::NegativeZero)) {
+            add(ir.IEqual(bits, ir.Imm32(0x80000000u)));
+        }
+        if (has(IR::FloatClassFunc::PositiveZero)) {
+            add(ir.IEqual(bits, ir.Imm32(0u)));
+        }
+    } else {
+        // We don't know the type yet, delay its resolution.
+        value = ir.FPCmpClass32(src0, src1);
+    }
+    SetDst64(inst.dst[1], ir.Ballot(value));
+}

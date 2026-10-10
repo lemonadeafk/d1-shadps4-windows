@@ -1,0 +1,52 @@
+diff --git a/src/shader_recompiler/frontend/translate/vector_alu.cpp b/src/shader_recompiler/frontend/translate/vector_alu.cpp
+index 2044b438..cebec729 100644
+--- a/src/shader_recompiler/frontend/translate/vector_alu.cpp
++++ b/src/shader_recompiler/frontend/translate/vector_alu.cpp
+@@ -1332,15 +1332,38 @@ void Translator::V_CMP_CLASS_F32(const GcnInst& inst) {
+     const IR::U32 src1{GetSrc(inst.src[1])};
+     IR::U1 value;
+     if (src1.IsImmediate()) {
+-        const auto class_mask = static_cast<IR::FloatClassFunc>(src1.U32());
+-        if ((class_mask & IR::FloatClassFunc::NaN) == IR::FloatClassFunc::NaN) {
+-            value = ir.FPIsNan(src0);
+-        } else if ((class_mask & IR::FloatClassFunc::Infinity) == IR::FloatClassFunc::Infinity) {
+-            value = ir.FPIsInf(src0);
+-        } else if ((class_mask & IR::FloatClassFunc::Negative) == IR::FloatClassFunc::Negative) {
+-            value = ir.FPLessThanEqual(src0, ir.Imm32(-0.f));
+-        } else {
+-            UNREACHABLE_MSG("Unsupported float class mask: {:#x}", static_cast<u32>(class_mask));
++        // GCN's class mask is an arbitrary subset of ten float classes, so build the predicate per
++        // bit instead of matching a few whole groups. The stock code only handled masks containing
++        // ALL of NaN, ALL of Infinity or ALL of Negative, and hit UNREACHABLE on anything else -
++        // Destiny 1 (CUSA00219 01.29) uses a quiet-NaN-only mask (0x2) while loading its first world.
++        // Signalling and quiet NaN cannot be told apart in a shader, nor can denormals from normals
++        // once denormals are flushed, so each of those pairs shares one test.
++        const u32 mask = src1.U32();
++        const auto has = [mask](IR::FloatClassFunc bit) { return (mask & static_cast<u32>(bit)) != 0; };
++        const IR::U32 bits{ir.BitCast<IR::U32>(src0)};
++        const IR::U1 is_inf{ir.FPIsInf(src0)};
++        value = ir.Imm1(false);
++        const auto add = [&](const IR::U1& term) { value = ir.LogicalOr(value, term); };
++        if (has(IR::FloatClassFunc::SignalingNan) || has(IR::FloatClassFunc::QuietNan)) {
++            add(ir.FPIsNan(src0));
++        }
++        if (has(IR::FloatClassFunc::NegativeInfinity)) {
++            add(ir.LogicalAnd(is_inf, ir.FPLessThan(src0, ir.Imm32(0.f))));
++        }
++        if (has(IR::FloatClassFunc::PositiveInfinity)) {
++            add(ir.LogicalAnd(is_inf, ir.FPGreaterThan(src0, ir.Imm32(0.f))));
++        }
++        if (has(IR::FloatClassFunc::NegativeNormal) || has(IR::FloatClassFunc::NegativeDenorm)) {
++            add(ir.LogicalAnd(ir.LogicalNot(is_inf), ir.FPLessThan(src0, ir.Imm32(0.f))));
++        }
++        if (has(IR::FloatClassFunc::PositiveNormal) || has(IR::FloatClassFunc::PositiveDenorm)) {
++            add(ir.LogicalAnd(ir.LogicalNot(is_inf), ir.FPGreaterThan(src0, ir.Imm32(0.f))));
++        }
++        if (has(IR::FloatClassFunc::NegativeZero)) {
++            add(ir.IEqual(bits, ir.Imm32(0x80000000u)));
++        }
++        if (has(IR::FloatClassFunc::PositiveZero)) {
++            add(ir.IEqual(bits, ir.Imm32(0u)));
+         }
+     } else {
+         // We don't know the type yet, delay its resolution.

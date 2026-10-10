@@ -1,0 +1,29 @@
+﻿diff --git a/src/video_core/texture_cache/texture_cache.cpp b/src/video_core/texture_cache/texture_cache.cpp
+index b4846209..b35a9b93 100644
+--- a/src/video_core/texture_cache/texture_cache.cpp
++++ b/src/video_core/texture_cache/texture_cache.cpp
+@@ -334,6 +334,24 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
+             return {merged_image_id, -1, -1};
+         }
+ 
++        // Size is greater, the image type differs and the resources cannot grow into each other:
++        // the address was reused for an unrelated image of another dimensionality. Destiny 1
++        // (CUSA00219 01.29) does this while loading pvp_moonbase - a 32x32 2-layer 2D array
++        // (0x2000 bytes) followed at the same address by a 32x32x32 3D texture (0x20000 bytes),
++        // same format and tiling. Treat it like the pool-allocation case above instead of aborting.
++        if (image_info.type != cache_image.info.type) {
++            LOG_WARNING(Render_Vulkan,
++                        "Image at {:#x} reused with a different type ({} -> {}), size {:#x} -> "
++                        "{:#x}; treating as a new allocation",
++                        image_info.guest_address, static_cast<int>(cache_image.info.type),
++                        static_cast<int>(image_info.type), cache_image.info.guest_size,
++                        image_info.guest_size);
++            if (safe_to_delete) {
++                FreeImage(cache_image_id);
++            }
++            return {merged_image_id, -1, -1};
++        }
++
+         // Enhanced debug logging for unreachable case
+         // Calculate expected size based on format and dimensions
+         u64 expected_size =

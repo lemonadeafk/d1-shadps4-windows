@@ -1,0 +1,331 @@
+diff --git a/build-again.bat b/build-again.bat
+new file mode 100644
+index 00000000..14eebdab
+--- /dev/null
++++ b/build-again.bat
+@@ -0,0 +1,6 @@
++@echo off
++set "PATH=C:\Program Files (x86)\Microsoft Visual Studio\Installer;%LOCALAPPDATA%\Microsoft\WinGet\Links;C:\Program Files\LLVM\bin;%PATH%"
++call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" >nul
++cd /d C:\d1server\shadPS4\build
++ninja > C:\d1server\shadPS4\build-log.txt 2>&1
++echo NINJA_EXIT=%ERRORLEVEL%
+diff --git a/src/core/libraries/voice/voice.cpp b/src/core/libraries/voice/voice.cpp
+index 9379cadc..ab61b62f 100644
+--- a/src/core/libraries/voice/voice.cpp
++++ b/src/core/libraries/voice/voice.cpp
+@@ -1,6 +1,8 @@
+ // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ 
++#include <atomic>
++
+ #include "common/logging/log.h"
+ #include "core/libraries/error_codes.h"
+ #include "core/libraries/libs.h"
+@@ -13,8 +15,16 @@ s32 PS4_SYSV_ABI sceVoiceConnectIPortToOPort() {
+     return ORBIS_OK;
+ }
+ 
+-s32 PS4_SYSV_ABI sceVoiceCreatePort() {
+-    LOG_ERROR(Lib_Voice, "(STUBBED) called");
++s32 PS4_SYSV_ABI sceVoiceCreatePort(u32* port_id, const void* param) {
++    // The stub used to take no parameters, so callers got ORBIS_OK but never a port id. Destiny 1
++    // keeps the id in its voice slots; left at 0xFFFFFFFF they make its fireteam session lookup
++    // return NULL, and the game crashes entering orbit. Hand out unique ids; no audio is wired.
++    static std::atomic<u32> next_port_id{0};
++    if (port_id == nullptr || param == nullptr) {
++        return ORBIS_OK; // old stub behaviour; no voice error code is defined here
++    }
++    *port_id = next_port_id++;
++    LOG_ERROR(Lib_Voice, "(STUBBED) called, port_id = {}", *port_id);
+     return ORBIS_OK;
+ }
+ 
+@@ -61,8 +71,12 @@ s32 PS4_SYSV_ABI sceVoiceGetPortInfo(u32 port_id, OrbisVoicePortInfo* info) {
+     return ORBIS_OK;
+ }
+ 
+-s32 PS4_SYSV_ABI sceVoiceGetResourceInfo() {
++s32 PS4_SYSV_ABI sceVoiceGetResourceInfo(OrbisVoiceResourceInfo* info) {
+     LOG_ERROR(Lib_Voice, "(STUBBED) called");
++    if (info == nullptr) {
++        return ORBIS_OK; // old stub behaviour; no voice error code is defined here
++    }
++    *info = {};
+     return ORBIS_OK;
+ }
+ 
+diff --git a/src/core/libraries/voice/voice.h b/src/core/libraries/voice/voice.h
+index 89467c83..8759f705 100644
+--- a/src/core/libraries/voice/voice.h
++++ b/src/core/libraries/voice/voice.h
+@@ -22,7 +22,15 @@ struct OrbisVoicePortInfo {
+ };
+ 
+ s32 PS4_SYSV_ABI sceVoiceConnectIPortToOPort();
+-s32 PS4_SYSV_ABI sceVoiceCreatePort();
++struct OrbisVoiceResourceInfo {
++    u16 max_in_voice_port;
++    u16 max_out_voice_port;
++    u16 max_in_device;
++    u16 max_out_device;
++    u16 max_port_connection;
++};
++
++s32 PS4_SYSV_ABI sceVoiceCreatePort(u32* port_id, const void* param);
+ s32 PS4_SYSV_ABI sceVoiceDeletePort();
+ s32 PS4_SYSV_ABI sceVoiceDisconnectIPortFromOPort();
+ s32 PS4_SYSV_ABI sceVoiceEnd();
+@@ -30,7 +38,7 @@ s32 PS4_SYSV_ABI sceVoiceGetBitRate(u32 port_id, u32* bitrate);
+ s32 PS4_SYSV_ABI sceVoiceGetMuteFlag();
+ s32 PS4_SYSV_ABI sceVoiceGetPortAttr();
+ s32 PS4_SYSV_ABI sceVoiceGetPortInfo(u32 port_id, OrbisVoicePortInfo* info);
+-s32 PS4_SYSV_ABI sceVoiceGetResourceInfo();
++s32 PS4_SYSV_ABI sceVoiceGetResourceInfo(OrbisVoiceResourceInfo* info);
+ s32 PS4_SYSV_ABI sceVoiceGetVolume();
+ s32 PS4_SYSV_ABI sceVoiceInit();
+ s32 PS4_SYSV_ABI sceVoiceInitHQ();
+diff --git a/src/shader_recompiler/frontend/translate/vector_alu.cpp b/src/shader_recompiler/frontend/translate/vector_alu.cpp
+index 2044b438..cebec729 100644
+--- a/src/shader_recompiler/frontend/translate/vector_alu.cpp
++++ b/src/shader_recompiler/frontend/translate/vector_alu.cpp
+@@ -1332,15 +1332,38 @@ void Translator::V_CMP_CLASS_F32(const GcnInst& inst) {
+     const IR::U32 src1{GetSrc(inst.src[1])};
+     IR::U1 value;
+     if (src1.IsImmediate()) {
+-        const auto class_mask = static_cast<IR::FloatClassFunc>(src1.U32());
+-        if ((class_mask & IR::FloatClassFunc::NaN) == IR::FloatClassFunc::NaN) {
+-            value = ir.FPIsNan(src0);
+-        } else if ((class_mask & IR::FloatClassFunc::Infinity) == IR::FloatClassFunc::Infinity) {
+-            value = ir.FPIsInf(src0);
+-        } else if ((class_mask & IR::FloatClassFunc::Negative) == IR::FloatClassFunc::Negative) {
+-            value = ir.FPLessThanEqual(src0, ir.Imm32(-0.f));
+-        } else {
+-            UNREACHABLE_MSG("Unsupported float class mask: {:#x}", static_cast<u32>(class_mask));
++        // GCN's class mask is an arbitrary subset of ten float classes, so build the predicate per
++        // bit instead of matching a few whole groups. The stock code only handled masks containing
++        // ALL of NaN, ALL of Infinity or ALL of Negative, and hit UNREACHABLE on anything else -
++        // Destiny 1 (CUSA00219 01.29) uses a quiet-NaN-only mask (0x2) while loading its first world.
++        // Signalling and quiet NaN cannot be told apart in a shader, nor can denormals from normals
++        // once denormals are flushed, so each of those pairs shares one test.
++        const u32 mask = src1.U32();
++        const auto has = [mask](IR::FloatClassFunc bit) { return (mask & static_cast<u32>(bit)) != 0; };
++        const IR::U32 bits{ir.BitCast<IR::U32>(src0)};
++        const IR::U1 is_inf{ir.FPIsInf(src0)};
++        value = ir.Imm1(false);
++        const auto add = [&](const IR::U1& term) { value = ir.LogicalOr(value, term); };
++        if (has(IR::FloatClassFunc::SignalingNan) || has(IR::FloatClassFunc::QuietNan)) {
++            add(ir.FPIsNan(src0));
++        }
++        if (has(IR::FloatClassFunc::NegativeInfinity)) {
++            add(ir.LogicalAnd(is_inf, ir.FPLessThan(src0, ir.Imm32(0.f))));
++        }
++        if (has(IR::FloatClassFunc::PositiveInfinity)) {
++            add(ir.LogicalAnd(is_inf, ir.FPGreaterThan(src0, ir.Imm32(0.f))));
++        }
++        if (has(IR::FloatClassFunc::NegativeNormal) || has(IR::FloatClassFunc::NegativeDenorm)) {
++            add(ir.LogicalAnd(ir.LogicalNot(is_inf), ir.FPLessThan(src0, ir.Imm32(0.f))));
++        }
++        if (has(IR::FloatClassFunc::PositiveNormal) || has(IR::FloatClassFunc::PositiveDenorm)) {
++            add(ir.LogicalAnd(ir.LogicalNot(is_inf), ir.FPGreaterThan(src0, ir.Imm32(0.f))));
++        }
++        if (has(IR::FloatClassFunc::NegativeZero)) {
++            add(ir.IEqual(bits, ir.Imm32(0x80000000u)));
++        }
++        if (has(IR::FloatClassFunc::PositiveZero)) {
++            add(ir.IEqual(bits, ir.Imm32(0u)));
+         }
+     } else {
+         // We don't know the type yet, delay its resolution.
+diff --git a/src/video_core/renderdoc.cpp b/src/video_core/renderdoc.cpp
+index 0fe7e9fc..1f83bcc7 100644
+--- a/src/video_core/renderdoc.cpp
++++ b/src/video_core/renderdoc.cpp
+@@ -1,7 +1,11 @@
+ // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ 
++#include <chrono>
++
+ #include "common/assert.h"
++#include "common/logging/log.h"
++#include "common/path_util.h"
+ #include "common/logging/formatter.h"
+ #include "core/emulator_settings.h"
+ #include "video_core/renderdoc.h"
+@@ -93,10 +97,30 @@ void LoadRenderDoc() {
+     }
+ }
+ 
++// D1-WINDOWS: a file-based trigger for unattended captures. If <user dir>/capture.trigger exists
++// it is deleted and the next frame is captured - no window focus or hotkey needed.
++static void PollCaptureTriggerFile() {
++    static auto last_poll = std::chrono::steady_clock::now();
++    const auto now = std::chrono::steady_clock::now();
++    if (now - last_poll < std::chrono::milliseconds(500)) {
++        return;
++    }
++    last_poll = now;
++    static const auto trigger =
++        Common::FS::GetUserPath(Common::FS::PathType::UserDir) / "capture.trigger";
++    std::error_code ec;
++    if (capture_state == CaptureState::Idle && std::filesystem::exists(trigger, ec)) {
++        std::filesystem::remove(trigger, ec);
++        LOG_WARNING(Common, "RenderDoc capture triggered by {}", trigger.string());
++        capture_state = CaptureState::Triggered;
++    }
++}
++
+ void StartCapture() {
+     if (!rdoc_api) {
+         return;
+     }
++    PollCaptureTriggerFile();
+ 
+     if (capture_state == CaptureState::Triggered) {
+         rdoc_api->StartFrameCapture(nullptr, nullptr);
+diff --git a/src/video_core/renderer_vulkan/vk_runtime.cpp b/src/video_core/renderer_vulkan/vk_runtime.cpp
+index 7e1c025a..964278cb 100644
+--- a/src/video_core/renderer_vulkan/vk_runtime.cpp
++++ b/src/video_core/renderer_vulkan/vk_runtime.cpp
+@@ -57,16 +57,19 @@ static std::pair<u32, u32> SanitizeCopyLayers(const VideoCore::ImageInfo& src_in
+             src_layers = dst_layers = std::min(src_layers, dst_layers);
+         }
+     } else {
+-        // For 2D <-> 3D copies, 2D layer count must equal 3D depth.
++        // For 2D <-> 3D copies the 2D layer count maps onto 3D depth slices. Only CLAMP it: an
++        // array with fewer layers than the volume is deep is a partial write of the volume (Destiny
++        // renders its 32^3 colour-grading LUT as four batches of 8 slices), and asking Vulkan for
++        // more layers than the array has is an invalid copy that silently drops those slices.
+         if (vk_src_type == vk::ImageType::e2D && vk_dst_type == vk::ImageType::e3D &&
+-            src_layers != depth) {
++            src_layers > depth) {
+             LOG_WARNING(Render_Vulkan,
+                         "Coercing copy 2D source layers {} to 3D destination depth {}", src_layers,
+                         depth);
+             src_layers = depth;
+         }
+         if (vk_src_type == vk::ImageType::e3D && vk_dst_type == vk::ImageType::e2D &&
+-            dst_layers != depth) {
++            dst_layers > depth) {
+             LOG_WARNING(Render_Vulkan,
+                         "Coercing copy 2D destination layers {} to 3D source depth {}", dst_layers,
+                         depth);
+diff --git a/src/video_core/texture_cache/image.cpp b/src/video_core/texture_cache/image.cpp
+index 38f76d7f..2e89d273 100644
+--- a/src/video_core/texture_cache/image.cpp
++++ b/src/video_core/texture_cache/image.cpp
+@@ -225,6 +225,15 @@ void Image::GetBarriers(Barriers& barriers, vk::ImageLayout dst_layout, vk::Acce
+     auto& last_state = backing->state;
+     auto& subresource_states = backing->subresource_states;
+ 
++    // A 3D image is one array layer as far as barriers go (Vulkan requires baseArrayLayer 0 /
++    // layerCount 1 for VK_IMAGE_TYPE_3D). A render target drawing into depth slices through a 2D
++    // array view arrives here with the SLICE range as layers; collapse it, or the per-layer state
++    // below indexes past the single layer this image has.
++    if (subres_range && info.props.is_volume) {
++        subres_range->base.layer = 0;
++        subres_range->extent.layers = info.resources.layers;
++    }
++
+     const bool needs_partial_transition =
+         subres_range &&
+         (subres_range->base != SubresourceBase{} || subres_range->extent != info.resources);
+diff --git a/src/video_core/texture_cache/texture_cache.cpp b/src/video_core/texture_cache/texture_cache.cpp
+index b4846209..15ce749b 100644
+--- a/src/video_core/texture_cache/texture_cache.cpp
++++ b/src/video_core/texture_cache/texture_cache.cpp
+@@ -22,6 +22,18 @@
+ 
+ namespace VideoCore {
+ 
++// `array` is a single-mip, non-volume image whose layers are depth slices of `volume`: same
++// address, format, tiling and footprint, and no more layers than the volume has slices. This is
++// how a render target draws into a 3D texture (CB slice_start..slice_max over a volume).
++static bool IsSliceArrayOfVolume(const ImageInfo& array, const ImageInfo& volume) {
++    return volume.props.is_volume && !array.props.is_volume &&
++           array.guest_address == volume.guest_address &&
++           array.pixel_format == volume.pixel_format && array.tile_mode == volume.tile_mode &&
++           array.size.width == volume.size.width && array.size.height == volume.size.height &&
++           array.resources.levels == 1 && volume.resources.levels == 1 &&
++           array.resources.layers <= volume.size.depth;
++}
++
+ static constexpr u32 MAX_IMAGES = std::numeric_limits<u16>::max();
+ static constexpr u32 MAX_IMAGE_VIEWS = std::numeric_limits<u16>::max();
+ static constexpr u32 MAX_SAMPLERS = std::numeric_limits<u16>::max();
+@@ -275,6 +287,14 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
+ 
+     // Equal address
+     if (image_info.guest_address == cache_image.info.guest_address) {
++        // A render target drawn into slices of a cached 3D image: render into the volume itself
++        // through a 2D-array view (3D images are created 2D_ARRAY_COMPATIBLE), so the slices land
++        // where the 3D sampler reads them. Without this each slice pass made a separate 2D array.
++        if (binding == BindingType::RenderTarget &&
++            IsSliceArrayOfVolume(image_info, cache_image.info)) {
++            return {cache_image_id, -1, -1};
++        }
++
+         const u32 lhs_block_size = image_info.num_bits * image_info.num_samples;
+         const u32 rhs_block_size = cache_image.info.num_bits * cache_image.info.num_samples;
+         if (image_info.BlockDim() != cache_image.info.BlockDim() ||
+@@ -334,6 +354,30 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
+             return {merged_image_id, -1, -1};
+         }
+ 
++        // A 3D texture requested where the cache holds the 2D-array render target its slices were
++        // drawn through (same format and footprint, no more layers than the volume has slices).
++        // Destiny 1 (CUSA00219 01.29) builds its 32x32x32 colour-grading LUT this way. Copy the
++        // drawn slices into the volume - an empty new 3D image here blacks out the whole frame.
++        if (IsSliceArrayOfVolume(cache_image.info, image_info)) {
++            return {ExpandImage(image_info, cache_image_id), -1, -1};
++        }
++
++        // Size is greater, the image type differs and the resources cannot grow into each other:
++        // the address was reused for an unrelated image of another dimensionality. Treat it like
++        // the pool-allocation case above instead of aborting.
++        if (image_info.type != cache_image.info.type) {
++            LOG_WARNING(Render_Vulkan,
++                        "Image at {:#x} reused with a different type ({} -> {}), size {:#x} -> "
++                        "{:#x}; treating as a new allocation",
++                        image_info.guest_address, static_cast<int>(cache_image.info.type),
++                        static_cast<int>(image_info.type), cache_image.info.guest_size,
++                        image_info.guest_size);
++            if (safe_to_delete) {
++                FreeImage(cache_image_id);
++            }
++            return {merged_image_id, -1, -1};
++        }
++
+         // Enhanced debug logging for unreachable case
+         // Calculate expected size based on format and dimensions
+         u64 expected_size =
+@@ -570,7 +614,26 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
+         if (exact_fmt && info.pixel_format != image_resolved.info.pixel_format) {
+             // Cannot reuse this image as we need the exact requested format.
+             image_id = {};
+-        } else if (image_resolved.info.resources < info.resources) {
++        } else if (image_resolved.info.resources < info.resources &&
++                   !IsSliceArrayOfVolume(info, image_resolved.info)) {
++            // D1-WINDOWS DIAGNOSTIC (temporary): name each failing image once, both descriptions.
++            static std::unordered_set<VAddr> d1_logged;
++            if (d1_logged.size() < 64 && d1_logged.insert(info.guest_address).second) {
++                LOG_WARNING(
++                    Render_Vulkan,
++                    "D1DIAG resolve-failed @{:#x}: requested {} type {} {}x{}x{} lv {} ly {} sz {:#x} "
++                    "binding {} | resolved @{:#x} {} type {} {}x{}x{} lv {} ly {} sz {:#x} | {} cached",
++                    info.guest_address, vk::to_string(info.pixel_format),
++                    static_cast<int>(info.type), info.size.width, info.size.height,
++                    info.size.depth, info.resources.levels, info.resources.layers,
++                    info.guest_size, static_cast<int>(desc.type),
++                    image_resolved.info.guest_address,
++                    vk::to_string(image_resolved.info.pixel_format),
++                    static_cast<int>(image_resolved.info.type), image_resolved.info.size.width,
++                    image_resolved.info.size.height, image_resolved.info.size.depth,
++                    image_resolved.info.resources.levels, image_resolved.info.resources.layers,
++                    image_resolved.info.guest_size, image_ids.size());
++            }
+             // The image was clearly picked up wrong.
+             FreeImage(image_id);
+             image_id = {};
