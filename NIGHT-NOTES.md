@@ -334,3 +334,27 @@ No more measured Tower inputs. `d1_oracle::world_sensors::derive(world_tag, bubb
   kind 3 0x808004FA/0x80800830, kind 40 0x80800556).
 - Other bubbles add their own group (PRV16 19d43443 + 2318ee6c, PRV24 8cc31436); their slots are
   not initialised by us yet - harmless so far, relevant once those squads matter.
+
+## 18. NPC squads - what is known, what is not (19:40)
+- The udt-5 frame's optional "sensor block" is the sensor AUTHORITY table: schema 0x80800CF7
+  (*[0x1902280], struct 0x310) = {u32, 65 x {8-byte peer id, u16 generation, bool valid}}, stored
+  at world+0xA88 and indexed by PEER (the owner index at slot+0x60), not by bubble. FUN_002A1210
+  reads 65 "changed" bits + the table; FUN_002A1080 arms a changed entry whose generation differs
+  and, if valid, fires the authority-change callbacks (FUN_002408B0) with that index.
+  Served now: D1_AH_SENSOR_AUTHORITY=<peer>[:<gen>] (opt-in). Accepted live (entry 0 = gen 1,
+  valid, world+0xD98 = 1), repeat frames do not re-fire. Run 20261010-192710-WIN-SQUADS.
+- It does NOT spawn anyone. c_squad_sensor_authority_change_observer (vtable 0x18EE5C0, slot 0
+  FUN_00106090) only walks EXISTING actors and reconciles them with their squad record
+  (FUN_00105D70) or deletes orphans - the hand-over path when authority moves between peers.
+- Squad record classes: squad 0x808007BC (setter FUN_00104990), member 0x80800810, objective
+  0x80800560, kind 40 0x808003C0. All 40 replication setters are listed by scanning the binding
+  tables for sig 0x4D7DDECB (scratchpad setters.json).
+- Squad value (0x8080071E, 0x7C bytes) as the setter reads it: +0x10..+0x28 -> rec+0x3BC..;
+  +0x2C count / +0x30 i16[] = per-member alive counts ("alive count auth", FUN_00103320 watchdog);
+  +0x40..+0x43 three state enums pushed onto existing members (FUN_00104D30 -> FUN_00BDA0E0);
+  +0x60 -> FUN_001046B0 on change; +0x64 -> rec+0x1B4, re-evaluates members; +0x78 a hash.
+  Every handler read so far acts on actors that already exist.
+- OPEN: who CREATES squad actors. Not the squad setter and not the authority observer. Next:
+  find the actor-creation call for a squad member (simulation entity create,
+  c_simulation_squad_entity_definition) and walk back to its trigger - a script command on the
+  authority, or a member-record (class 0x80800810, setter in the 0x40xxxx group) field.
