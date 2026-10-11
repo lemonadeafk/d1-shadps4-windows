@@ -1,0 +1,17 @@
+diff --git a/src/shader_recompiler/frontend/control_flow_graph.cpp b/src/shader_recompiler/frontend/control_flow_graph.cpp
+index f38f0777..fc2a36fb 100644
+--- a/src/shader_recompiler/frontend/control_flow_graph.cpp
++++ b/src/shader_recompiler/frontend/control_flow_graph.cpp
+@@ -169,6 +169,12 @@ void CFG::SplitDivergenceScopes() {
+                // with SAVEEXEC to mask the threads that didn't pass the condition
+                // of initial branch.
+                (inst.opcode == Opcode::S_ANDN2_B64 && inst.dst[0].field == OperandField::ExecLo) ||
++               // A plain AND into EXEC narrows the mask the same way SAVEEXEC does when the
++               // compiler already holds the previous mask in a register (Destiny 1: the vertex
++               // shader of the shadow cascade fitting pass does `s_and_b64 exec, s, vcc`, two
++               // masked v_mov, then `s_andn2_b64 exec, s, exec`). Without a scope the masked
++               // writes run for every lane and clobber the register the else-side compares.
++               (inst.opcode == Opcode::S_AND_B64 && inst.dst[0].field == OperandField::ExecLo) ||
+                inst.IsCmpx();
+     };
+     const auto is_close_scope = [](const GcnInst& inst) {

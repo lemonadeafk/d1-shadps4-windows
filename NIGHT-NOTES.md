@@ -1005,3 +1005,23 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   vertex shader) is wrong in shadPS4. NEXT: dump the box VS (eid 5421 vertex stage) and its
   inputs to see where attr0 = (1,1,-1,-1) comes from; compare the light matrix the shadow-map
   draws used (their VS constants) with the receiver matrix.
+
+## 51. Shadow cascade fitting FIXED in shadPS4 (2026-10-11 18:45, capture runs\20261011-184251-WIN-RDCFIX\fix.rdc)
+- Chain (old capture eids): 4199 fills 7259 (120x270) with 2.0; 4207 scatters the visible scene
+  into it with MIN blending; 4217..4289 reduce 7259 -> 7262 -> ... -> 7278 (1x1 RGBA32F) =
+  the cascade scale/offset the mask pass's vertex shader fetches as attr0. Everything was the
+  sentinel 2.0 -> 7278 = (1,1,-1,-1) -> wrong uv + the shadow map fitted to nothing.
+- Cause: the 4207 vertex shader (vs_0x7a6d711fdad781fc) builds its full-screen triangles from
+  the vertex index with EXEC-masked code: `s_and_b64 exec, s, vcc` / two masked v_mov /
+  `s_andn2_b64 exec, s, exec` / v_cmp_eq 1.0, v0. shadPS4's CFG::SplitDivergenceScopes only
+  opened a scope on S_AND_SAVEEXEC / S_ANDN2 / cmpx, so the masked v_mov ran for every lane and
+  the compare became `1.0 == -1.0`: all vertices x = -1, zero-area triangles, nothing drawn.
+- Fix: S_AND_B64 with dst EXEC also opens a scope (control_flow_graph.cpp;
+  patches\shadps4-exec-and-scope.diff, included in shadps4-all-changes.diff). shadPS4 was also
+  merged up to upstream 2026-10-11. The shader cache must be cleared after such a fix
+  (%APPDATA%\shadPS4\cache\CUSA00219; old one kept as CUSA00219.bak-before-execfix).
+- After: 7259-equivalent holds real data, the 1x1 texture holds real per-cascade values, and the
+  mask (tex 3215) is a correct picture - lit ground white, cars in the Wall's shadow dark.
+- STILL BLACK on screen: shadowed pixels and surfaces facing away from the sun get no ambient
+  at all. The mask is now right, so the remaining fault is the ambient/sky term itself in the
+  composite. NEXT: in fix.rdc find the composite pass and which input is zero.

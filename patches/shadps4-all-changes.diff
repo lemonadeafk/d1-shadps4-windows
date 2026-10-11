@@ -86,11 +86,28 @@ index 89467c83..8759f705 100644
  s32 PS4_SYSV_ABI sceVoiceGetVolume();
  s32 PS4_SYSV_ABI sceVoiceInit();
  s32 PS4_SYSV_ABI sceVoiceInitHQ();
+diff --git a/src/shader_recompiler/frontend/control_flow_graph.cpp b/src/shader_recompiler/frontend/control_flow_graph.cpp
+index f38f0777..fc2a36fb 100644
+--- a/src/shader_recompiler/frontend/control_flow_graph.cpp
++++ b/src/shader_recompiler/frontend/control_flow_graph.cpp
+@@ -169,6 +169,12 @@ void CFG::SplitDivergenceScopes() {
+                // with SAVEEXEC to mask the threads that didn't pass the condition
+                // of initial branch.
+                (inst.opcode == Opcode::S_ANDN2_B64 && inst.dst[0].field == OperandField::ExecLo) ||
++               // A plain AND into EXEC narrows the mask the same way SAVEEXEC does when the
++               // compiler already holds the previous mask in a register (Destiny 1: the vertex
++               // shader of the shadow cascade fitting pass does `s_and_b64 exec, s, vcc`, two
++               // masked v_mov, then `s_andn2_b64 exec, s, exec`). Without a scope the masked
++               // writes run for every lane and clobber the register the else-side compares.
++               (inst.opcode == Opcode::S_AND_B64 && inst.dst[0].field == OperandField::ExecLo) ||
+                inst.IsCmpx();
+     };
+     const auto is_close_scope = [](const GcnInst& inst) {
 diff --git a/src/shader_recompiler/frontend/translate/vector_alu.cpp b/src/shader_recompiler/frontend/translate/vector_alu.cpp
-index 2044b438..cebec729 100644
+index 6f2075fb..d85350dc 100644
 --- a/src/shader_recompiler/frontend/translate/vector_alu.cpp
 +++ b/src/shader_recompiler/frontend/translate/vector_alu.cpp
-@@ -1332,15 +1332,38 @@ void Translator::V_CMP_CLASS_F32(const GcnInst& inst) {
+@@ -1368,15 +1368,38 @@ void Translator::V_CMP_CLASS_F32(const GcnInst& inst) {
      const IR::U32 src1{GetSrc(inst.src[1])};
      IR::U1 value;
      if (src1.IsImmediate()) {
@@ -233,7 +250,7 @@ index 38f76d7f..2e89d273 100644
          subres_range &&
          (subres_range->base != SubresourceBase{} || subres_range->extent != info.resources);
 diff --git a/src/video_core/texture_cache/texture_cache.cpp b/src/video_core/texture_cache/texture_cache.cpp
-index b4846209..15ce749b 100644
+index 1e7a23de..c95dc44c 100644
 --- a/src/video_core/texture_cache/texture_cache.cpp
 +++ b/src/video_core/texture_cache/texture_cache.cpp
 @@ -22,6 +22,18 @@

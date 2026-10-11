@@ -395,13 +395,19 @@ def shader(eids):
             out.append(f"raster cull={vk.rasterizer.cullMode} front={vk.rasterizer.frontCCW}")
         except Exception as e:  # noqa: BLE001
             out.append(f"vk state: {e!r}")
-        refl = st.GetShaderReflection(rd.ShaderStage.Pixel)
+        refl = st.GetShaderReflection(rd.ShaderStage.Vertex if _cfg.get("stage") == "vs" else rd.ShaderStage.Pixel)
+        try:
+            stg = rd.ShaderStage.Vertex if _cfg.get("stage") == "vs" else rd.ShaderStage.Pixel
+            for i, r in enumerate(st.GetReadOnlyResources(stg, False)):
+                out.append(f"ro[{i}] {[str(x.descriptor.resource) for x in [r]]} {r!r}"[:300])
+        except Exception as e:  # noqa: BLE001
+            out.append(f"ro: {e!r}")
         if refl is not None:
             targets = ctl.GetDisassemblyTargets(True)
             pipe = st.GetGraphicsPipelineObject()
             out.append(f"targets {list(targets)}")
             out.append(ctl.DisassembleShader(pipe, refl, targets[0]))
-        with open(os.path.join(OUT, f"shader-{eid}.txt"), "w", encoding="utf-8") as f:
+        with open(os.path.join(OUT, f"shader-{eid}{'-vs' if _cfg.get('stage') == 'vs' else ''}.txt"), "w", encoding="utf-8") as f:
             f.write(chr(10).join(str(x) for x in out) + chr(10))
     ctl.Shutdown()
     cap.Shutdown()
