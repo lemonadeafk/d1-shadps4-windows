@@ -802,3 +802,31 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
 - Not done: face/customization (0x8080181A; FUN_0054DC10 reads +0x00 u16 as an arrangement
   index, +0x1C hash, +0x20 wear-helmet and an option-byte array) - hidden by the helmet;
   Intellect/Discipline/Strength read 0 (items carry no stats); Grimoire 0.
+
+## 42. WEAPONS WORK (2026-10-11 12:55) - Desktop\WEAPON-*.png
+- Chain: players[i] config (0x90F530) -> rep buffer 0x1098 B (FUN_009105B0) -> set
+  (0x73C3E0 -> 0x73C230) -> spawn. Weapon descriptions (rep+0x368 / +0x688 / +0x9A8) are built
+  by FUN_0090EFD0(ordinal, equipment entry, ...):
+    desc+0x18 = entry+0x00 (SOID), desc+0x20 = ordinal,
+    row = FUN_0054B730(u16 entry+0x0A)          <- PATTERN TABLE, investment-globals root
+          (tag 0x80a58000) +0x350 -> 0x80a5ffa9: 192 rows x 0x20 {asset key, hash1, type
+          hash, hash3, n, .., off},
+    desc+0x0C = row+4, desc+0x10 = row+8, desc+0x00 = asset table lookup of row+0 (the
+    weapon's gameplay bundle); then 16 x u16 from the per-weapon perk tables (root +0x360,
+    0x10-stride, via 0x54B930) -> desc+0x2D8, and the per-weapon stat table -> 20 floats.
+- We shipped 0 at entry+0x0A for every item = pattern row 0 = {key 79257f0a -> 0x80a7e218,
+  hashes unset}: a weapon object exists per slot but has no behaviour (open hand + Ghost).
+- THE VALUE IS CONTENT: u32 at gear record +0x60 of the item definition (the gear record is
+  the `gear @+0x...` art-arrangement already walks): The Last Word 32, Praedyth's Revenge 13,
+  Corrective Measure 14. (def+0x7C is the weapon TYPE hash = the row's type hash; rows where
+  hash1 == type are the type's base pattern: hand cannon 12, sniper 13, MG 14, rocket 15.)
+- `python tools\finish_character.py` (after the three builders) sets entry+0x0A for ordinals
+  6/7/8 in the character (+0x250) and the peer view (+0x218) and the wear-helmet byte.
+- Result on the Moon map, zero pokes: first person with The Last Word in hand, crosshair,
+  weapon HUD with ammo; firing consumes ammo (3 -> 1); triangle swaps to Praedyth's Revenge;
+  hold triangle -> Corrective Measure with "NO HEAVY AMMO". The Ghost is gone.
+- STILL OPEN: sprint (peak speed 5.6 u/s walking, L3 click and L3 held identical) and no
+  grenade/melee/super HUD icons = ABILITIES. Same builder: FUN_0090F1B0 -> rep+0x180,
+  0x90F440 -> rep+0x320, 0x90E560 / 0x90E6F0 / 0x90EA60 -> rep+0x324 / +0x330 / +0x358,
+  fed by the appearance block's 5 x {u8, 16 hashes} (+0x10) and 32 hashes (+0x164) that we
+  serve as zeros.
