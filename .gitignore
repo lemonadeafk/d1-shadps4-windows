@@ -11,3 +11,4 @@ tools/rdc_survey.json
 *.rdc
 *.png
 runs/
+inject/

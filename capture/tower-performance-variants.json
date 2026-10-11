@@ -1,0 +1,428 @@
+[
+{
+"index": 0,
+"a": 1395765676,
+"flag": 0,
+"variants": []
+},
+{
+"index": 1,
+"a": 3234523396,
+"flag": 0,
+"variants": []
+},
+{
+"index": 2,
+"a": 808742800,
+"flag": 0,
+"variants": []
+},
+{
+"index": 3,
+"a": 3843912701,
+"flag": 0,
+"variants": []
+},
+{
+"index": 4,
+"a": 2061012265,
+"flag": 0,
+"variants": []
+},
+{
+"index": 5,
+"a": 2015561846,
+"flag": 0,
+"variants": []
+},
+{
+"index": 6,
+"a": 3551851998,
+"flag": 0,
+"variants": []
+},
+{
+"index": 7,
+"a": 2686257873,
+"flag": 0,
+"variants": []
+},
+{
+"index": 8,
+"a": 2924664515,
+"flag": 0,
+"variants": []
+},
+{
+"index": 9,
+"a": 2946991131,
+"flag": 0,
+"variants": []
+},
+{
+"index": 10,
+"a": 3812598744,
+"flag": 0,
+"variants": []
+},
+{
+"index": 11,
+"a": 3562335589,
+"flag": 0,
+"variants": []
+},
+{
+"index": 12,
+"a": 731088655,
+"flag": 0,
+"variants": []
+},
+{
+"index": 13,
+"a": 3027141153,
+"flag": 0,
+"variants": []
+},
+{
+"index": 14,
+"a": 222025288,
+"flag": 0,
+"variants": []
+},
+{
+"index": 15,
+"a": 881094870,
+"flag": 0,
+"variants": []
+},
+{
+"index": 16,
+"a": 1997469944,
+"flag": 0,
+"variants": []
+},
+{
+"index": 17,
+"a": 3975098979,
+"flag": 0,
+"variants": []
+},
+{
+"index": 18,
+"a": 3562335590,
+"flag": 0,
+"variants": []
+},
+{
+"index": 19,
+"a": 3562335591,
+"flag": 0,
+"variants": []
+},
+{
+"index": 20,
+"a": 1080300363,
+"flag": 0,
+"variants": []
+},
+{
+"index": 21,
+"a": 4223662144,
+"flag": 0,
+"variants": []
+},
+{
+"index": 22,
+"a": 4223662147,
+"flag": 0,
+"variants": []
+},
+{
+"index": 23,
+"a": 2013949013,
+"flag": 0,
+"variants": []
+},
+{
+"index": 24,
+"a": 1138933509,
+"flag": 0,
+"variants": []
+},
+{
+"index": 25,
+"a": 3597189385,
+"flag": 0,
+"variants": []
+},
+{
+"index": 26,
+"a": 904324854,
+"flag": 0,
+"variants": []
+},
+{
+"index": 27,
+"a": 904324853,
+"flag": 0,
+"variants": []
+},
+{
+"index": 28,
+"a": 2211933285,
+"flag": 0,
+"variants": []
+},
+{
+"index": 29,
+"a": 3832772836,
+"flag": 0,
+"variants": []
+},
+{
+"index": 30,
+"a": 2211933286,
+"flag": 0,
+"variants": []
+},
+{
+"index": 31,
+"a": 731002086,
+"flag": 0,
+"variants": []
+},
+{
+"index": 32,
+"a": 3579920425,
+"flag": 0,
+"variants": []
+},
+{
+"index": 33,
+"a": 674760697,
+"flag": 0,
+"variants": []
+},
+{
+"index": 34,
+"a": 312925310,
+"flag": 0,
+"variants": []
+},
+{
+"index": 35,
+"a": 312925309,
+"flag": 0,
+"variants": []
+},
+{
+"index": 36,
+"a": 3818242729,
+"flag": 0,
+"variants": []
+},
+{
+"index": 37,
+"a": 3267424239,
+"flag": 0,
+"variants": []
+},
+{
+"index": 38,
+"a": 3983376743,
+"flag": 0,
+"variants": []
+},
+{
+"index": 39,
+"a": 2425749901,
+"flag": 0,
+"variants": []
+},
+{
+"index": 40,
+"a": 3195237278,
+"flag": 0,
+"variants": []
+},
+{
+"index": 41,
+"a": 3215494342,
+"flag": 0,
+"variants": []
+},
+{
+"index": 42,
+"a": 2655298995,
+"flag": 0,
+"variants": []
+},
+{
+"index": 43,
+"a": 1597969186,
+"flag": 0,
+"variants": []
+},
+{
+"index": 44,
+"a": 4160772591,
+"flag": 0,
+"variants": []
+},
+{
+"index": 45,
+"a": 1083947847,
+"flag": 0,
+"variants": []
+},
+{
+"index": 46,
+"a": 103494714,
+"flag": 0,
+"variants": []
+},
+{
+"index": 47,
+"a": 2751014576,
+"flag": 0,
+"variants": []
+},
+{
+"index": 48,
+"a": 1736935664,
+"flag": 0,
+"variants": []
+},
+{
+"index": 49,
+"a": 2248199890,
+"flag": 0,
+"variants": []
+},
+{
+"index": 50,
+"a": 2471598965,
+"flag": 0,
+"variants": []
+},
+{
+"index": 51,
+"a": 1486318673,
+"flag": 0,
+"variants": []
+},
+{
+"index": 52,
+"a": 3849781540,
+"flag": 0,
+"variants": []
+},
+{
+"index": 53,
+"a": 1303638370,
+"flag": 0,
+"variants": []
+},
+{
+"index": 54,
+"a": 3428221696,
+"flag": 0,
+"variants": []
+},
+{
+"index": 55,
+"a": 3990648977,
+"flag": 0,
+"variants": []
+},
+{
+"index": 56,
+"a": 4223662146,
+"flag": 0,
+"variants": []
+},
+{
+"index": 57,
+"a": 3666050405,
+"flag": 0,
+"variants": []
+},
+{
+"index": 58,
+"a": 340319110,
+"flag": 0,
+"variants": []
+},
+{
+"index": 59,
+"a": 1303528339,
+"flag": 0,
+"variants": []
+},
+{
+"index": 60,
+"a": 3457055882,
+"flag": 0,
+"variants": []
+},
+{
+"index": 61,
+"a": 1657946483,
+"flag": 0,
+"variants": []
+},
+{
+"index": 62,
+"a": 965235978,
+"flag": 0,
+"variants": []
+},
+{
+"index": 63,
+"a": 1028605551,
+"flag": 1,
+"variants": []
+},
+{
+"index": 64,
+"a": null,
+"flag": 0,
+"variants": []
+},
+{
+"index": 65,
+"a": null,
+"flag": 0,
+"variants": []
+},
+{
+"index": 66,
+"a": null,
+"flag": 0,
+"variants": []
+},
+{
+"index": 67,
+"a": null,
+"flag": 0,
+"variants": []
+},
+{
+"index": 68,
+"a": null,
+"flag": 0,
+"variants": []
+},
+{
+"index": 69,
+"a": null,
+"flag": 0,
+"variants": []
+},
+{
+"index": 70,
+"a": null,
+"flag": 0,
+"variants": []
+}
+]

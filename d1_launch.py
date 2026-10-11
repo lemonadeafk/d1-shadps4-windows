@@ -450,6 +450,8 @@ def session(args):
                 # valid) so the client applies host values to squads, and tell every squad member
                 # (kind 2) that it exists. The Tower's vendors and civilians spawn from this.
                 "D1_AH_SENSOR_AUTHORITY": "0:1:0",
+                # live experiment channel: tools\inject_sensor.py drops udt-5 frames here
+                "D1_AH_SENSOR_INJECT_DIR": str(Path(__file__).resolve().parent / "inject"),
                 "D1_AH_SENSOR_KIND_VALUE": "2:0x80800868:" + str(
                     Path(__file__).resolve().parent / "capture" / "values" / "member_exists.bin"),
                 "D1_AH_SENSOR_REPEAT_S": "5",

@@ -434,3 +434,30 @@ Vendors:
 - Not established: that a performance is what the "Approach" prompt / vendor menu waits for.
 - Next: a way to inject a udt-5 frame into a running session, then try performances one at a
   time on Rahool's sensor and watch the prompt.
+
+## 23. Injection tool, performance sweep, sense messages (22:05)
+- INJECTION: D1_AH_SENSOR_INJECT_DIR (launcher default: shadgames\inject). The AH sends every
+  *.udt5 file dropped there on its next tick and renames it .sent. `tools\inject_sensor.py
+  <bubble> <group>:<sub>[:<value hex>]` builds the frame with d1-oracle's `sensor_frame` example
+  (kind / value tag / part 2 from derived content). Verified: value lands in the sensor record
+  within ~1 s, no memory writes. `tools\perf_sweep_all.py` steps all candidates with screenshots.
+- Performance play path: FUN_0013B460 -> FUN_00150900 (name lookup) -> thunk 0xBDAC20 ->
+  FUN_00428FB0 -> FUN_0042B520 (already active? else FUN_00427160 fetch + thunk 0xBDA030 ->
+  FUN_00474AD0). FUN_00474AD0 returns true only if the performance has flag bit 0 and the value's
+  hash B is in its variant list (count @+0x20, 4 hashes @+0x24, flag @+0x34 of 0x38-byte
+  entries). In the plaza definition only index 63 has the flag and no entry has variants, so the
+  call returns false every tick and actor+0xABC never takes the sequence. Whether the pose still
+  plays is NOT established (Xur's nameplate did move between steps of the sweep).
+- Sweep at Xur (bubble 0, all 21 kind-40 sensors, 64 names): the prompt stayed "Approach"
+  throughout. Performances alone do not gate the vendor prompt/menu.
+- "Approach" exists once in memory as UTF-16 UI text (next to "Patches 99-40", the sweeper bot's
+  name); it is written once and never rewritten when the prompt toggles (20 toggles, 0 writes).
+  The UI element beside it carries 0x07862BF8 - not a corpus hash, not in the eboot, not in the
+  Tower packages. Text is not stored plainly in the _en_ packages searched.
+- udt 6 sensor_sense_update (client -> AH), now logged every time: gen(8), 3 bits, the same
+  55-bit name-ref, then a body. All decoded ones name SQUADS (kind 1) of group 8d3f1166
+  (sq_boulevard_vendor_black_market = Xur's squad, vendor_avatar, vendor_nm, civ_*, the_mask,
+  vendor_playtest) or the two objectives - the client's own squad state (part 2). Approaching Xur
+  and holding square produced no message naming his performance sensor or member.
+- content_grep is slow by construction (the game's Oodle under Unicorn, every entry, no index):
+  fine for a few-MB package, hopeless for ps4_ui_social (590 MB).
