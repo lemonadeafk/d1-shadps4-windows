@@ -506,3 +506,21 @@ Vendors:
   wrong activity. Supers still fire on L3 and there is still no sprint on activity 1.
 - Keyboard: shadPS4 input_config\default.ini now also has l3 = lshift, l1 = f, r1 = f
   (backup default.ini.bak-before-shift-f).
+
+## 27. Sprint / super: a character-data gap the whole project has (00:05)
+- Button layout is fine: in-game Settings shows Default (L3 Sprint, L1+R1 Super). Re-selecting
+  Jumper then Default changes nothing - L3 still casts the super, L1+R1 does nothing.
+- shadPS4 is fine: SDL left-stick click / l3 keys -> OrbisPad L3 = 0x2, L1 0x400, R1 0x800.
+- So the "sprint" action slot holds a super. Abilities are separate action classes
+  (c_action_impl_sprint_ability, slam (Fist of Havoc), radiance, void_bow, ward_of_dawn,
+  dynamic_binding_ability, ...).
+- Character object (0x80801954) C+0x78 = 5 x 68 B {u8, 16 x u32} ("talent-grid-ish" in the
+  repo's notes) is ALL ZERO in every character fixture in the repo (8 files), and every fixture
+  has identity {race 0, gender 0, class 1}. The repo's own playable run also fired a Warlock super.
+  => an open problem for the project, not a Windows-port issue.
+- Hunter consistency test (Gunslinger in inventory + character equipped list + profile list,
+  run 20261010-234142-WIN-HUNTER): no sprint. Class/subclass mismatch alone is not the cause.
+- Tools: d1-oracle example object_file (decode/encode big objects via files, refuses non-round-trip).
+- Next: find the reader of C+0x78 (not an imul 0x44 site; try the investment character-state
+  component's methods) and what fills it on a real server - likely the subclass talent grid's
+  active nodes / ability perks resolved server-side.
