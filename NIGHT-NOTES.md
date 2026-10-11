@@ -948,3 +948,22 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   start bubble: the mission's own cinematic objects (pf_104a_pwr) are never created. NEXT: what
   creates them - a host-spawned simulation object (like squad actors) named by the kind-6
   value's participant lists (kind-0x23 ids), or a phase/precache record.
+
+## 48. What creates cinematic objects (2026-10-11 16:00-17:00, runs CINE3/CINE4)
+- The 28 objects that register cinematics during a load are content entities of class 0x80800861
+  (globals_cinematic, orbit, globals_com01) carrying a cinematic component (runtime type
+  0x808028A1, registered in FUN_00BFADD0). Its init (FUN_004E6C50) calls FUN_004E28F0 = register.
+- They are created by the SIMULATION QUEUE: element types registered in FUN_00762DF0 -
+  0x3A c_simulation_queue_cinematic_batch_request (handler FUN_00763F80 -> activity loader
+  [0x267AF08] load/unload of cinematic batch slots), 0x39 start_stop, 0x37 cinematic_object
+  (FUN_00764120 -> FUN_004E45D0), 0x38 cache_gear. Posted with FUN_002FF7C0(type, tag, data)
+  only by world-controller states (prologue_intro_loading, initial_slice_set_loading filler,
+  setup_orbit, physics_join).
+- Batch requests seen on a mission load (exec bp on FUN_00763F80, request bytes: +0 type,
+  +1 activity name, +0x29 load mask, +0x2A unload mask): type 1 act_cosmo_m0_highway load 3;
+  load 4 unload 1; then unload 6 (physics_join). Nothing stays loaded in-world.
+- The mission's power cinematic: kind-6 record def+0x68 = 0x0B975B3D = FNV-1("104a_pwr").
+  FUN_004E2F50 compares it with each registered entry's virtual name hash (FUN_003537E0).
+  The scene entity named 104a_pwr has not been found in content yet (no literal hash/name in
+  cinematic_trv_activities 021f or cosmo packages). NEXT: read a registered entry's hash in an
+  orbit session to learn how names are stored; find which batch/slot carries mission scenes.

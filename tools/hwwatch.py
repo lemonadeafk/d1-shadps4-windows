@@ -209,6 +209,11 @@ def main():
                                                                          "R12", "R13", "R14", "R15", "Rsp", "Rbp", "Rip")})
                             REGLOG[-1]["mem_rbx"] = (winproc_read(pid, ctx.Rbx, 0x60) or b"").hex()
                             REGLOG[-1]["mem_r13"] = (winproc_read(pid, ctx.R13, 0x8) or b"").hex()
+                            REGLOG[-1]["mem_rdi"] = (winproc_read(pid, ctx.Rdi, 0x60) or b"").hex()
+                            REGLOG[-1]["mem_rsi"] = (winproc_read(pid, ctx.Rsi, 0x60) or b"").hex()
+                            p28 = winproc_read(pid, ctx.Rdi + 0x28, 8)
+                            if p28:
+                                REGLOG[-1]["mem_rdi28"] = (winproc_read(pid, int.from_bytes(p28, "little"), 0x40) or b"").hex()
                             t7 = winproc_read(pid, ctx.R15 + 0x1040, 8)
                             if t7:
                                 ptr = int.from_bytes(t7, "little")
@@ -218,6 +223,7 @@ def main():
                             REGLOG[-1]["mem_rsp"] = (winproc_read(pid, ctx.Rsp, 0x60) or b"").hex()
                             REGLOG[-1]["mem_r14"] = (winproc_read(pid, ctx.R14, 0x60) or b"").hex()
                             REGLOG[-1]["mem_rdi"] = (winproc_read(pid, ctx.Rdi, 0x60) or b"").hex()
+                            REGLOG[-1]["mem_rsi"] = (winproc_read(pid, ctx.Rsi, 0x60) or b"").hex()
                             if a.exec:
                                 ctx.EFlags |= 0x10000  # RF: do not re-trap on the same instruction
                         ctx.Dr6 = 0
