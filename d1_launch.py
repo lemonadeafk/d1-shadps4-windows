@@ -447,8 +447,10 @@ def session(args):
             #    spawns unarmed: the Ghost is the only thing it can hold (no firing, no sprint).
             #  - 2479 + 4917 + 4992 (same method): the subclass slot with its nodes and the
             #    artifact slot.
+            #  - 2500 / 2497 / 2496 (same method, scratchpad flagmin2.py): the three padlocked
+            #    slots on the character screen's second page (left 1st, left 3rd, right 1st).
             for name, value in {
-                "D1_UNLOCK_FLAGS": "98,131,419,440,834,2479,2501,2502,2503,2667,4917,4992,5015,5987,6018",
+                "D1_UNLOCK_FLAGS": "98,131,419,440,834,2479,2496,2497,2500,2501,2502,2503,2667,4917,4992,5015,5987,6018",
                 "D1_UNLOCKS": str(REPO / "capture-rig" / "unlocks" / "unlocks-200-campaign.bin"),
                 "D1_FAMILY42": "1",
                 # msg 43 f4.1 field 8 = big-party size. With the empty stub it is 0, a solo player

@@ -781,3 +781,24 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
 - OPEN: why the three weapon objects stay inactive (first person = open hand + Ghost). Suspects:
   the two unset hashes at desc+0xC/+0x10 (0x668100 is handed desc+0xC), and the per-equipment
   fields the peer view leaves empty (0x8080183C +0x0A u16, +0x20 {hash,u32}, +0x28 list).
+
+## 41. Fully slotted character (12:30) - Desktop\character-page1-full.png / -page2-full.png
+- Every item definition states its BUCKET id at def+0x88 and (via the art table) its equipped
+  ordinal. Read over all 7,544 items: ordinal 9 = Ships (bucket 0x0C), 12 = Emblems (0x19),
+  13 = Emotes (0x1B), 14 = Shaders (0x1C), 15 = Sparrow Horn (0x1E), 16 = Artifacts (0x24).
+  d1-oracle's BUCKET_IDS now has all five "undetermined" buckets, so those items get backpack
+  slots (210 / 220 / 230 / 240 / 280) - without one the character screen shows a spinner.
+- Slot padlocks on page 2: FLAG 2500 (left 1st = vehicle), 2497 (left 3rd = ship),
+  2496 (right 1st = shader). Launcher grants them. Slot-flag family so far: 2496, 2497,
+  2500, 2501 heavy, 2502 primary, 2503 special, 2479 subclass, 4917 + 4992 artifact.
+- inventory-hunter-full now has 18 elements: subclass (valid node set), 3 weapons + spare
+  Fatebringer, Ghost (Competitive Shell), 5 armour, artifact, sparrow (Arecibo Answer), horn,
+  ship (ci 1853), emote (ci 1800), shader (ci 4481), emblem (ci 1512, SOID ...0312).
+  The emblem element is refused by `character build` / `build-peer` (they set the emblem via
+  --emblem), so: build character + peer WITHOUT 17-Emblems.bin, then add it and run
+  `inventory rebuild` + `profile build`. Then wear-helmet (+0x2C = 1) in all three as before.
+- Result: all 12 slots on page 1 and all 6 on page 2 show an item with icon; tooltips are
+  complete (Ghost shell perks, sparrow speed/boost/durability). Tower launch re-checked.
+- Not done: face/customization (0x8080181A; FUN_0054DC10 reads +0x00 u16 as an arrangement
+  index, +0x1C hash, +0x20 wear-helmet and an option-byte array) - hidden by the helmet;
+  Intellect/Discipline/Strength read 0 (items carry no stats); Grimoire 0.

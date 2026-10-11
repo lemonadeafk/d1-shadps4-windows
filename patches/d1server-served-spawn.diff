@@ -559,7 +559,7 @@ index 4e17610..1548c4d 100644
      pub fn pah_region_id(&self) -> u32 {
          let o = Self::PAH_REGIONS + Self::PAH_REGION_ID;
 diff --git a/d1-server/crates/d1-activity-host/src/state.rs b/d1-server/crates/d1-activity-host/src/state.rs
-index 891ceb8..2fa78e7 100644
+index 891ceb8..c3523d1 100644
 --- a/d1-server/crates/d1-activity-host/src/state.rs
 +++ b/d1-server/crates/d1-activity-host/src/state.rs
 @@ -171,6 +171,8 @@ pub struct ActivityInstance {
@@ -613,7 +613,7 @@ index 891ceb8..2fa78e7 100644
              sensor_last_sent: None,
          }
      }
-@@ -435,6 +458,45 @@ impl ActivityInstance {
+@@ -435,6 +458,64 @@ impl ActivityInstance {
          self.sensor_repeat = Some(every);
      }
  
@@ -627,17 +627,36 @@ index 891ceb8..2fa78e7 100644
 +        let mut files: Vec<std::path::PathBuf> = rd
 +            .filter_map(|e| e.ok())
 +            .map(|e| e.path())
-+            .filter(|p| p.extension().is_some_and(|x| x == "udt5"))
++            // `<name>.udt5` = a sensor frame; `<name>.udtN` = the encoded payload of any other
++            // AH->client message (e.g. `d1-oracle activity-host encode --udt 2`), sent as-is.
++            .filter(|p| {
++                p.extension()
++                    .and_then(|x| x.to_str())
++                    .is_some_and(|x| x.strip_prefix("udt").is_some_and(|n| n.parse::<u32>().is_ok()))
++            })
 +            .collect();
 +        files.sort();
 +        let mut out = Vec::new();
 +        for f in files {
 +            match std::fs::read(&f) {
 +                Ok(payload) if !payload.is_empty() => {
-+                    tracing::info!("⭐ injecting {} ({} bytes) as udt-5", f.display(), payload.len());
++                    let udt: u32 = f
++                        .extension()
++                        .and_then(|x| x.to_str())
++                        .and_then(|x| x.strip_prefix("udt"))
++                        .and_then(|n| n.parse().ok())
++                        .unwrap_or(5);
++                    tracing::info!("⭐ injecting {} ({} bytes) as udt-{udt}", f.display(), payload.len());
 +                    let _ = std::fs::rename(&f, f.with_extension("sent"));
-+                    self.sensors_sent += 1;
-+                    out.push(AhPush::new(self.ah_id, AhMessage::SensorAuthUpdate { payload }));
++                    if udt == 5 {
++                        self.sensors_sent += 1;
++                        out.push(AhPush::new(self.ah_id, AhMessage::SensorAuthUpdate { payload }));
++                    } else {
++                        out.push(AhPush::new(
++                            self.ah_id,
++                            AhMessage::Opaque { user_defined_type: udt, bytes: payload },
++                        ));
++                    }
 +                }
 +                // empty = still being written; pick it up on the next tick
 +                _ => {}
@@ -659,7 +678,7 @@ index 891ceb8..2fa78e7 100644
      /// ⭐⭐ The udt-5 `sensor_auth_update`, sent **once** after the instance reaches [`Live`]
      /// (or on an interval, in [`Self::set_sensor_repeat`] mode).
      ///
-@@ -462,6 +524,9 @@ impl ActivityInstance {
+@@ -462,6 +543,9 @@ impl ActivityInstance {
              }
              // Repeat mode: pace on the interval since the last send.
              Some(every) => {
@@ -669,7 +688,7 @@ index 891ceb8..2fa78e7 100644
                  if let Some(last) = self.sensor_last_sent {
                      if now.saturating_duration_since(last) < every {
                          return None;
-@@ -510,6 +575,7 @@ impl ActivityInstance {
+@@ -510,6 +594,7 @@ impl ActivityInstance {
          s.set_activity_index(self.activity_index);
          // ⭐⭐ The field that aborts rung 33's world transition when it disagrees with content.
          s.set_activity_checksum(self.activity_checksum);
@@ -677,7 +696,7 @@ index 891ceb8..2fa78e7 100644
          // ⭐⭐ The bubble count + unchosen bytes that FUN_002A0320 validates right after. Bounded
          // to the 64-byte field; a too-large count is a config error, so publish what we can and let
          // the loud "bubble count mismatch" name a wrong number rather than silently truncating.
-@@ -586,6 +652,23 @@ impl ActivityInstance {
+@@ -586,6 +671,23 @@ impl ActivityInstance {
          // the operator reads it; every re-publish after it logs at DEBUG, because a refresh every
          // few seconds repeating the same receipt turns the run log into noise and hides the
          // warnings. The condition is the join/refresh discriminator we already track.
@@ -701,7 +720,7 @@ index 891ceb8..2fa78e7 100644
          match self.pah_region {
              Some((region, peer, token)) => match m.set_pah_region(region, peer, token) {
                  Ok(()) if first => tracing::info!(
-@@ -817,13 +900,70 @@ impl ActivityInstance {
+@@ -817,13 +919,70 @@ impl ActivityInstance {
              //
              // Accepted and recorded, not acted on. A stub with one peer has nothing to reserve
              // against, and `43 reservations_failed` is for failures we cannot have.
@@ -774,7 +793,7 @@ index 891ceb8..2fa78e7 100644
      /// Advance the replication epoch. `[C]` a `u8`; the wire payload is `{u8 epoch, u8 suppress}`.
      ///
      /// Nothing in a stub needs to call this - it exists because the epoch is authoritative state
-@@ -894,6 +1034,13 @@ impl ActivityInstance {
+@@ -894,6 +1053,13 @@ impl ActivityInstance {
          self.activity_checksum = checksum;
      }
  
@@ -1017,6 +1036,20 @@ index 0000000..8366cd9
 +        println!("{:#010x} {} {} {}  # {:#010x}", s.name_hash, s.kind, s.sub, u8::from(s.part2_tag.is_some()), s.value_tag);
 +    }
 +}
+diff --git a/d1-server/crates/d1-oracle/src/activity_host.rs b/d1-server/crates/d1-oracle/src/activity_host.rs
+index 443c865..9373d7a 100644
+--- a/d1-server/crates/d1-oracle/src/activity_host.rs
++++ b/d1-server/crates/d1-oracle/src/activity_host.rs
+@@ -121,6 +121,9 @@ pub const CALL_SITES: &[(u32, u64, Option<usize>)] = &[
+     (0, 0x0190_2310, Some(0x600)),  // entity_slots_allocated  FUN_010579F0 memset(buf, 0, 0x600)
+     (1, 0x0190_2380, None),         // global_activity_state    FUN_01057B80
+     (4, 0x0190_22F8, Some(0x1A8)),  // join_result              FUN_01058020 local_1e0[424]
++    // udt 2 `world_globals_state`: FUN_01057EF0 decodes through *DAT_01902388 into an 8-byte
++    // local and FUN_002A2270 stores it at world_globals+0x14 with the "received" byte +0x10 = 1.
++    (2, 0x0190_2388, Some(0x8)),    // world_globals_state      FUN_01057EF0 local_38[8]
+     // ⭐ udt 11 `replicate_membership`. Its handler is `FUN_0029CF50 -> FUN_0029C730`, which states
+     // the size TWICE and in two different ways - `local_528c = 0x5038` (the buffer size it hands
+     // the codec) and `memcpy(image, ac+0xE70, 0x5038)` (the current state it seeds with) - so the
 diff --git a/d1-server/crates/d1-oracle/src/character.rs b/d1-server/crates/d1-oracle/src/character.rs
 index 3ba6f83..a1a63f3 100644
 --- a/d1-server/crates/d1-oracle/src/character.rs
@@ -1037,10 +1070,28 @@ index 3ba6f83..a1a63f3 100644
                      if s == EMBLEM_SLOT {
                          return Err(OracleError::Shape(format!(
 diff --git a/d1-server/crates/d1-oracle/src/inventory.rs b/d1-server/crates/d1-oracle/src/inventory.rs
-index c219d4f..e850f10 100644
+index c219d4f..96407f3 100644
 --- a/d1-server/crates/d1-oracle/src/inventory.rs
 +++ b/d1-server/crates/d1-oracle/src/inventory.rs
-@@ -322,6 +322,9 @@ pub struct ItemSpec {
+@@ -254,6 +254,17 @@ pub const BUCKET_IDS: &[(&str, u8)] = &[
+     ("Ships", 0x0C),
+     ("Vehicle", 0x0D),
+     ("Ghost", 0x0E),
++    // ⭐ The five count-10 buckets, DETERMINED 2026-10-11 from content: every item definition
++    // states its bucket id at `def+0x88` (The Last Word 0x02, Praedyth's Revenge 0x03, Bladedancer
++    // 0x06 - the known rows agree), and each equipped ordinal's items all name one bucket:
++    // ordinal 12 (emblems, 242 items) -> 0x19, 13 (emotes, 125) -> 0x1B, 14 (shaders, 142, the
++    // only one with dye gear) -> 0x1C, 15 (horns, 18) -> 0x1E, 16 (artifacts, 94, level-curved)
++    // -> 0x24. Ordinal 9 is Ships (0x0C).
++    ("Emblems", 0x19),
++    ("Emotes", 0x1B),
++    ("Shaders", 0x1C),
++    ("Sparrow Horn", 0x1E),
++    ("Artifacts", 0x24),
+ ];
+ 
+ /// ⛔ **Materials** - bucket `0x05`, slots 0-19. Every item this project has ever shipped landed
+@@ -322,6 +333,9 @@ pub struct ItemSpec {
      pub progression_ordinal: u16,
      /// `+0x58`. Default [`EMPTY_INDEX`].
      pub talent_grid: u16,
@@ -1050,7 +1101,7 @@ index c219d4f..e850f10 100644
      /// `+0x88` / `+0x98`, paired. `[U]` - the key array's empty marker has no identified reader, so
      /// the default is *empty* (all zero, exactly what every fixture has had) rather than a guessed
      /// sentinel. Set it only with a discriminator in mind.
-@@ -338,6 +341,26 @@ pub struct ItemSpec {
+@@ -338,6 +352,26 @@ pub struct ItemSpec {
      pub item_hash: u32,
  }
  
@@ -1077,7 +1128,7 @@ index c219d4f..e850f10 100644
  impl ItemSpec {
      /// A well-formed element for `hash`, with the content index resolved out of the measured table.
      ///
-@@ -355,6 +378,7 @@ impl ItemSpec {
+@@ -355,6 +389,7 @@ impl ItemSpec {
              progress_points: 0,
              progression_ordinal: EMPTY_INDEX,
              talent_grid: EMPTY_INDEX,
@@ -1085,7 +1136,7 @@ index c219d4f..e850f10 100644
              stats: Vec::new(),
              state_bits: 1,
              flag_86: 1,
-@@ -376,6 +400,7 @@ impl ItemSpec {
+@@ -376,6 +411,7 @@ impl ItemSpec {
              progress_points: 0,
              progression_ordinal: 0,
              talent_grid: 0,
@@ -1093,7 +1144,7 @@ index c219d4f..e850f10 100644
              stats: Vec::new(),
              state_bits: 1,
              flag_86: 1,
-@@ -437,6 +462,7 @@ impl ItemSpec {
+@@ -437,6 +473,7 @@ impl ItemSpec {
          o[OFF_PROGRESSION_ORDINAL..OFF_PROGRESSION_ORDINAL + 2]
              .copy_from_slice(&self.progression_ordinal.to_le_bytes());
          o[OFF_TALENT_GRID..OFF_TALENT_GRID + 2].copy_from_slice(&self.talent_grid.to_le_bytes());
@@ -1101,7 +1152,7 @@ index c219d4f..e850f10 100644
          o[OFF_FLAG_86] = self.flag_86;
          for (i, (key, value)) in self.stats.iter().enumerate() {
              let k = OFF_STAT_KEYS + i * 2;
-@@ -666,6 +692,7 @@ pub fn controls(table: Option<&IndexTable>) -> Vec<Control> {
+@@ -666,6 +703,7 @@ pub fn controls(table: Option<&IndexTable>) -> Vec<Control> {
          progress_points: 0,
          progression_ordinal: EMPTY_INDEX,
          talent_grid: EMPTY_INDEX,
@@ -1109,6 +1160,37 @@ index c219d4f..e850f10 100644
          stats: Vec::new(),
          state_bits: 1,
          flag_86: 1,
+@@ -791,16 +829,13 @@ pub fn controls(table: Option<&IndexTable>) -> Vec<Control> {
+         )),
+     }
+     match (slot_for_bucket("Artifacts", 0), slot_for_bucket("Sparrow Horn", 0)) {
+-        (None, None) => v.push(ok(
+-            "undetermined-bucket-returns-none",
+-            "Artifacts and Sparrow Horn have no determined bucket id - they are two of the five \
+-             equippable count-10 buckets 0x19/0x1B/0x1C/0x1E/0x24 and item counts cannot \
+-             discriminate five buckets that all hold ten. slot_for_bucket refuses rather than \
+-             guessing one in five",
++        (Some(280), Some(240)) => v.push(ok(
++            "count-10-buckets-read-from-content",
++            "Artifacts -> slot 280 (bucket 0x24), Sparrow Horn -> slot 240 (bucket 0x1E): the              bucket id is the byte at def+0x88 of the item definition",
+         )),
+         (a, b) => v.push(no(
+-            "undetermined-bucket-returns-none",
+-            format!("Artifacts -> {a:?}, Sparrow Horn -> {b:?} - a bucket id was invented"),
++            "count-10-buckets-read-from-content",
++            format!("Artifacts -> {a:?}, Sparrow Horn -> {b:?}"),
+         )),
+     }
+ 
+@@ -1024,7 +1059,7 @@ mod tests {
+         assert_eq!(bucket_for_slot(3), Some(MATERIALS_ID));
+         assert_eq!(bucket_for_slot(322), None, "one past the last range must be NOT FOUND");
+         assert_eq!(bucket_for_slot(137), Some(0x0F), "slots 133-142 are bucket 0x0F");
+-        assert_eq!(slot_for_bucket("Artifacts", 0), None, "an undetermined bucket must not be invented");
++        assert_eq!(slot_for_bucket("Artifacts", 0), Some(280));
+         for (name, _) in BUCKET_IDS.iter().filter(|(n, _)| *n != "Materials" && *n != "Consumables") {
+             let s = slot_for_bucket(name, 0).unwrap_or_else(|| panic!("{name} has no slot"));
+             assert_ne!(bucket_for_slot(s), Some(MATERIALS_ID), "{name} landed in Materials");
 diff --git a/d1-server/crates/d1-oracle/src/lib.rs b/d1-server/crates/d1-oracle/src/lib.rs
 index e571644..214bed7 100644
 --- a/d1-server/crates/d1-oracle/src/lib.rs
