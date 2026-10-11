@@ -906,3 +906,13 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   - the known harness limitation (activity_host.rs FIELD_KIND_DYNAMIC_FLAGS: the game's dynamic
   flags pool is not set up in the static image). NEXT: give the encoder harness a dynamic-flags
   pool so object states (and probably objective/script states) can be served.
+- Encoder work toward object states (14:50): d1-oracle `make_object` now accepts images longer
+  than the struct (out-of-line storage) with self-relative pointers (`0xD1D1D1 << 40 | offset`),
+  and D1_HARNESS_TRACE=1 appends the last 24 RIPs + registers to a unicorn fault. With mode = 1
+  and a valid bitset pointer the encode still faults: the field walker (FUN_0105B410 loop,
+  dispatch `call [0x18FAB40 + 0x150 + kind*8]` @0x105B74A) reads field kind 0xC8 (rax =
+  0xffffffc8) while walking 0x80804117/0x80804153 - the descriptor it walks there is not the
+  one `d1-eboot descriptors` prints (likely a runtime-built descriptor for the flags type).
+  NEXT: dump the descriptor bytes the walker is reading (rdi/r14 at the fault) and compare with
+  the static 0x80804153 record; then the flag meanings (light on) from the object's state
+  component handler (FUN_003529F0 virtual).
