@@ -37,6 +37,12 @@ DESTINATIONS = {
               "--bubbles", "22", "--chosen", "0-21"],
         env=["D1_AH_SENSOR_WORLD=0x80cb87eb", "D1_AH_ACTIVITY_INDEX=92"],
         launch="launch_patrol.py"),
+    # First Light (Crucible, one private bubble) as Elimination (407, the repo's measured mode).
+    "pvp_moonbase": dict(
+        args=["--inworld", "--world", "pvp_moonbase", "--checksum", "0x5966e491",
+              "--bubbles", "1", "--chosen", "0"],
+        env=["D1_AH_SENSOR_WORLD=0x80f08003", "D1_AH_ACTIVITY_INDEX=407", "D1_AH_SENSOR_PLAYER_TEAM=-1"],
+        launch="launch_patrol.py"),
     # "A Guardian Rises" has no Director node for an existing character; the client loads the world
     # the activity host names, so it is reached through the patrol node with a story activity's
     # index (165 = Restoration, measured from the Director).

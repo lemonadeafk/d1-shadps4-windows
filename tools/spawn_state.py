@@ -42,6 +42,11 @@ for tag in kinds.get(12, [])[:40]:
     blk = proc.read(rec + 0x218, 0x10)
     if owner or handle not in (0, 0xFFFFFFFF) or any(blk):
         print(f"  slot {tag:#x}: owner {owner:#x} handle {handle:#x} block+0x218 {blk.hex()}")
+        if owner:
+            # the client's ready flag (+0x299) needs served team (+0x250) == its own (+0x2C8)
+            print(f"     team served +0x250 = {ctypes.c_int32(d(rec + 0x250)).value}, client +0x2C8 = "
+                  f"{ctypes.c_int32(d(rec + 0x2C8)).value}; ready +0x299 = {proc.read(rec + 0x299, 1)[0]}"
+                  f" (+0x298 = {proc.read(rec + 0x298, 1)[0]})")
 for tag in kinds.get(16, []):
     rec = resolve(tag)
     print(f"  lifetime {tag:#x}: phase(+0x1AC) {d(rec + 0x1AC)}  tod {struct.unpack('<f', proc.read(rec + 0x680, 4))[0]:.2f}")

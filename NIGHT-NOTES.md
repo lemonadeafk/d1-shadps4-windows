@@ -642,3 +642,30 @@ all intermediate shots in shadgames\overnight\.
 - ddmin over the client's unlock-flag plane (diagnostic poke, reopen the screen, read pixels):
   FLAG 2502 = primary slot (+ the character PREVIEW), 2503 = special, 2501 = heavy.
   Launcher now grants them (D1_UNLOCK_FLAGS). Subclass/artifact flags: see section 34.
+
+## 34. More worlds, lifetime phases, item grids (04:40)
+- Subclass + artifact flags (same ddmin): 2479, 4917, 4992. Launcher grants all six.
+  With the flags SERVED (no poke) the character screen shows the three weapons, the lit
+  subclass, the artifact slot and the character PREVIEW (silhouette = lighting, model is right).
+- CRUCIBLE MAP SERVED, ZERO POKES: `autopilot.py --director --destination pvp_moonbase`
+  (First Light, world 0x80f08003, checksum 0x5966e491, 1 private bubble, activity 407).
+  Needed: (a) records with NO first part (value tag -1, part2 only - kind 14): the walk skips
+  fresh/presence for them (@0x2D03E5); unserved they stay pending+unowned and hold the post-pass.
+  SensorInitEntry.no_value_part; world_sensors cache is now v2. (b) team -1 here too (client
+  players[i]+0x738 = -1 everywhere except the Tower).
+- LIFETIME PHASES are real activity states, changed live with tools\inject_sensor.py +
+  SENSOR_FRAME_PHASE (read back at record+0x1AC each time): 3 = play (spawn allowed),
+  4 = black screen, 5 = looks like 3, 6 = "MISSION COMPLETE - ELIMINATION - Mission end:
+  seconds remaining" (Desktop\moon-mission-complete-from-server.png), 7 = like 3.
+  Spawn gate allows only 3 and 6 (masks 0x48 vs 0x3B7 @0x4147DB).
+- ITEM TALENT GRIDS: the grid index is the u32 AFTER tag 0x808017BD in the item definition
+  (Last Word 295, Praedyth 319, Corrective Measure 314, armour 151-155, Ghost 897, vehicle 278,
+  Bladedancer 130). `d1-oracle inventory rebuild` now sets it for every item. Result: the
+  tooltip shows Rate of Fire/Impact/Range/Stability/Reload/Magazine + perks + "Details", and
+  the Details screen shows the whole perk tree (Desktop\the-last-word-*.png).
+- STILL OPEN - the in-world Guardian holds the summoned Ghost (first person: hand + Ghost +
+  dial; third person in the Tower: the "orb" at the chest) instead of a weapon, in every world.
+  No firing, no sprint, L1+R1 nothing. NOT the cause: weapon-slot flags, item grids, lifetime
+  phase, mission script, touchpad state (touchpad toggles the Nav Mode text only).
+  Action lookups in the mission: only 80 (player locomotion) and 84 (floating_locomotion = the
+  Ghost). One type-8 object is parented to the biped (def 0x80aae367, ps4_globals).
