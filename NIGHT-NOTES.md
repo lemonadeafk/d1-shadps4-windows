@@ -846,3 +846,20 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
 - Measured on the Moon map, zero pokes: HUD shows grenade + melee icons, super bar, 3 weapons;
   grenade throws (arc grenade, icon goes on cooldown); double jump 3.8 vs 1.0; sprint 8.3 u/s
   with L3 HELD (walk 5.6; a quick L3 click did not latch in my input timing).
+
+## 44. Enemies spawn in the mission (2026-10-11 13:30, run 20261011-132448-WIN-ENEMY1)
+- Mission bubbles with squads (world_sensors cache): bubble 3 = 30 squads / 45 members
+  (+16 kind-40 performance sensors), 12 = 12 / 6, 1 = 6 / 0, 13 = 8 / 0, 16 = 5 / 0,
+  5 = 3 / 0, start bubble 14 = 1 / 1 (the Ghost).
+- `autopilot.py --director --destination guardian_rises_b3` (D1_AH_SENSOR_WORLD=0x80cb800d:3):
+  the same "member exists = 1" value that spawns Tower NPCs spawns the mission's squads:
+  44 bipeds and 69 type-11 weapon objects. The player (biped #843) starts inside the Wall
+  (dark, flashlight cone, the mission Ghost's blue light), full HUD.
+- The radar shows hostile contacts (red sector; inner ring red when a biped is ~5 m away behind
+  a wall). In 8 s only 1 of 44 bipeds moved: they are idle - nothing wakes them (squad values
+  and objectives are still schema defaults; mission script not emulated).
+- Player facing = player array element +0x120 (fx, fy); position +0x90. Turn rate with the
+  right stick held ~104 deg/s.
+- Not yet seen on screen (dark); not yet tested: walking in from the start bubble 14 (the
+  client did start a `normal_z_leg` transition to PRV112.1 on its own here), whether enemies
+  react to gunfire, damage, kills.

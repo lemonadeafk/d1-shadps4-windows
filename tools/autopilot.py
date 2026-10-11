@@ -54,6 +54,20 @@ DESTINATIONS = {
         env=["D1_AH_SENSOR_WORLD=0x80cb800d:14", "D1_AH_ACTIVITY_INDEX=165",
              "D1_AH_SENSOR_PLAYER_TEAM=-1"],
         launch="launch_patrol.py"),
+    # Experiments: the same mission started in another bubble (3 = its main combat area: 30
+    # squads / 45 members; 12 = 12 squads / 6 members).
+    "guardian_rises_b3": dict(
+        args=["--inworld", "--world", "act_cosmo_m0_highway", "--checksum", "0x8fe07299",
+              "--bubbles", "22", "--chosen", "0-21"],
+        env=["D1_AH_SENSOR_WORLD=0x80cb800d:3", "D1_AH_ACTIVITY_INDEX=165",
+             "D1_AH_SENSOR_PLAYER_TEAM=-1"],
+        launch="launch_patrol.py"),
+    "guardian_rises_b12": dict(
+        args=["--inworld", "--world", "act_cosmo_m0_highway", "--checksum", "0x8fe07299",
+              "--bubbles", "22", "--chosen", "0-21"],
+        env=["D1_AH_SENSOR_WORLD=0x80cb800d:12", "D1_AH_ACTIVITY_INDEX=165",
+             "D1_AH_SENSOR_PLAYER_TEAM=-1"],
+        launch="launch_patrol.py"),
 }
 
 
