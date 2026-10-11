@@ -739,3 +739,13 @@ all intermediate shots in shadgames\overnight\.
   The screen does NOT swap: the real server follows with updated objects (profile 4/1
   equipment list, character 3/1, peer view 0/1). NEXT: on 403, decode the item SOID
   (request schema 0x80801942, one u64), swap it into the equipment list, re-push those objects.
+
+## 39. Final check and the sharpest form of the weapon problem (06:25)
+- Default Tower launch still works with tonight's files (run 20261011-051050-WIN-FINALTOWER:
+  in_world, team 0/0, ready flag set, fade lifted).
+- Tower census: 28 bipeds, 20 type-11 WEAPON objects. Walking each biped's child list
+  (first child at +0x4C, next sibling at +0x48): NPC bipeds carry 1-2 weapons each; the
+  PLAYER biped (index 0) carries only one `interactive` and one `system` object. So weapon
+  objects can be created in our worlds - from an NPC's definition - but the player's loadout
+  is never applied to its biped. That is the whole "Ghost in hand / orb / no sprint / no
+  firing" problem, and it is the next thing to solve (leads in section 36).
