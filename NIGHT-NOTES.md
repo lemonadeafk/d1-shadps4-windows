@@ -967,3 +967,13 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   The scene entity named 104a_pwr has not been found in content yet (no literal hash/name in
   cinematic_trv_activities 021f or cosmo packages). NEXT: read a registered entry's hash in an
   orbit session to learn how names are stored; find which batch/slot carries mission scenes.
+
+## 49. The Ghost in the Wall (2026-10-11 17:30, run GHOST1)
+- The music cue plays for the user; the Ghost's lines do not (no voice, no Ghost visible).
+- The Ghost is squad member sq_nux_ghost__ghost (fc0e45a3 kind 2 sub 95) driven by
+  ho_ghostlight (kind 24, value 0x8080065C {bool, u32 counter, name ref, typed body}, setter
+  FUN_00122C60 stores it at rec+0x1B0 and acts when the counter rises), of_ghostlight (kind 33),
+  pm_nux_ghost_light_up_fly_to_gun (kind 28 {name ref, u32}) and triggers
+  pt_nux_ghost_light_up_start/continue (kind 29).
+- Served {1, 1, null} to ho_ghostlight: applied, no visible change. Kind 28 values are NOT
+  applied (the client reports kind 28 in its own udt-6 sense updates - client side).
