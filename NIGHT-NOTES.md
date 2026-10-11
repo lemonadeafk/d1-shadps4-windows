@@ -524,3 +524,18 @@ Vendors:
 - Next: find the reader of C+0x78 (not an imul 0x44 site; try the investment character-state
   component's methods) and what fills it on a real server - likely the subclass talent grid's
   active nodes / ability perks resolved server-side.
+
+## 28. Consistent Hunter (00:25)
+- Class byte 1 = Hunter (Bungie class_type; the loadout's Hunter subclass is class_type 1).
+- capture-rig/inventory-hunter-full = loadouts/y1-hunter-vault-of-glass.json (Bladedancer grid 130,
+  The Last Word, Praedyth's Revenge, Corrective Measure, Prime Zealot set, Shattered Vault Cloak)
+  + the class-neutral Ghost/Artifact/Vehicle/Horn. char-hunter.bin / profile-hunter.bin built by
+  `d1-oracle character build` / `profile build --inventory <dir> --identity 0,0,1 --all-content`.
+  Launcher default now.
+- `--all-content` (+0x6E4C/+0x6E4D = 1) is what unlocked every Director destination in the old
+  geared profile.
+- `d1-oracle art-arrangement write --inventory <dir>` -> capture-rig/item-art-arrangement.tsv; with
+  it the character's equipment entries carry art indices (armour 713-721, weapons 1220/1384/1379)
+  instead of 0xFFFF = no model.
+- Equipping an item sends investment 403 inventory_equip_item; the generic reply dropped BAP and
+  crashed the game. Responder now answers it with the {u4,u32} composite (same as 701).

@@ -417,13 +417,18 @@ def session(args):
             # with run-boot.sh's default (profile-old-russia, no character file) the Guardian is
             # "identity-only". Verified 2026-10-10: level 40 / light 385 / armour in the character
             # screen, and every Director destination unlocked.
-            "D1_PROFILE_FILE": str(REPO / "capture-rig" / "profiles" / "profile-geared-385.bin"),
-            "D1_CHARACTER_FILE": str(REPO / "capture-rig" / "characters" / "char-geared-385.bin"),
+            # The consistent HUNTER (class byte 1 = Hunter, as the loadout's class_type confirms):
+            # loadouts/y1-hunter-vault-of-glass.json staged into capture-rig/inventory-hunter-full,
+            # then `d1-oracle character build` / `profile build --inventory` from that same folder,
+            # so every equipped reference names a served item. Previous set (Titan armour on a
+            # Hunter character): profile-geared-385.bin / char-geared-385.bin / inventory.
+            "D1_PROFILE_FILE": str(REPO / "capture-rig" / "profiles" / "profile-hunter.bin"),
+            "D1_CHARACTER_FILE": str(REPO / "capture-rig" / "characters" / "char-hunter.bin"),
             # The responder serves the item inventory (family 4/3) ONLY when this is set - its
             # startup table shows the path as "[default]" either way. Without it the client has an
             # equipped list and no items behind it (found 2026-10-10: the subclass element was
             # nowhere in guest memory), so nothing the subclass item carries can take effect.
-            "D1_INVENTORY": str(REPO / "capture-rig" / "inventory"),
+            "D1_INVENTORY": str(REPO / "capture-rig" / "inventory-hunter-full"),
             "D1_ACCOUNT_TRACE_OUT": str(run / "account-trace.bin"),
             "RUN_OUT": str(run),
         }.items():
