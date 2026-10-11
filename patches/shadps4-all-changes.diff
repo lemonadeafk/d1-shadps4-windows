@@ -250,7 +250,7 @@ index 38f76d7f..2e89d273 100644
          subres_range &&
          (subres_range->base != SubresourceBase{} || subres_range->extent != info.resources);
 diff --git a/src/video_core/texture_cache/texture_cache.cpp b/src/video_core/texture_cache/texture_cache.cpp
-index 1e7a23de..c95dc44c 100644
+index 1e7a23de..1e14de8d 100644
 --- a/src/video_core/texture_cache/texture_cache.cpp
 +++ b/src/video_core/texture_cache/texture_cache.cpp
 @@ -22,6 +22,18 @@
@@ -272,7 +272,7 @@ index 1e7a23de..c95dc44c 100644
  static constexpr u32 MAX_IMAGES = std::numeric_limits<u16>::max();
  static constexpr u32 MAX_IMAGE_VIEWS = std::numeric_limits<u16>::max();
  static constexpr u32 MAX_SAMPLERS = std::numeric_limits<u16>::max();
-@@ -275,6 +287,14 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
+@@ -275,6 +287,31 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
  
      // Equal address
      if (image_info.guest_address == cache_image.info.guest_address) {
@@ -284,10 +284,27 @@ index 1e7a23de..c95dc44c 100644
 +            return {cache_image_id, -1, -1};
 +        }
 +
++        // FindImage keeps walking the other overlaps with the image it has already resolved to.
++        // Once that is a volume: meeting ITSELF must not "expand" it into a fresh copy (one new
++        // 3D image per rendered slice), and meeting the stale 2D-array its slices were once drawn
++        // through must not copy that array over it again - Destiny 1's 32^3 colour-grading LUT
++        // lost slices 0-6 to exactly that, which turned every dark colour into pure black.
++        if (merged_image_id && slot_images[merged_image_id].info.props.is_volume) {
++            if (cache_image_id == merged_image_id) {
++                return {merged_image_id, -1, -1};
++            }
++            if (IsSliceArrayOfVolume(cache_image.info, slot_images[merged_image_id].info)) {
++                if (safe_to_delete) {
++                    FreeImage(cache_image_id);
++                }
++                return {merged_image_id, -1, -1};
++            }
++        }
++
          const u32 lhs_block_size = image_info.num_bits * image_info.num_samples;
          const u32 rhs_block_size = cache_image.info.num_bits * cache_image.info.num_samples;
          if (image_info.BlockDim() != cache_image.info.BlockDim() ||
-@@ -334,6 +354,30 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
+@@ -334,6 +371,30 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
              return {merged_image_id, -1, -1};
          }
  
@@ -318,7 +335,7 @@ index 1e7a23de..c95dc44c 100644
          // Enhanced debug logging for unreachable case
          // Calculate expected size based on format and dimensions
          u64 expected_size =
-@@ -570,7 +614,26 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
+@@ -570,7 +631,26 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
          if (exact_fmt && info.pixel_format != image_resolved.info.pixel_format) {
              // Cannot reuse this image as we need the exact requested format.
              image_id = {};

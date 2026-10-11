@@ -1025,3 +1025,21 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
 - STILL BLACK on screen: shadowed pixels and surfaces facing away from the sun get no ambient
   at all. The mask is now right, so the remaining fault is the ambient/sky term itself in the
   composite. NEXT: in fix.rdc find the composite pass and which input is zero.
+
+## 52. BLACK SHADOWS FIXED (2026-10-11 19:25) - Desktop\SHADOWS-before.png / SHADOWS-FIXED-after.png
+- tools\rdc_eval.py: evaluates one pixel of a fragment shader from the RenderDoc disassembly with
+  the pass's real buffers, vertex outputs and texels (RenderDoc cannot debug these shaders).
+  Reproduced the composite (eid 29789) to 1%: a shadowed pixel gets sky light ~1/25 of a sunlit
+  one - the lighting was fine. Then the tone-map pass (eid 32179): its 32^3 colour-grading LUT
+  returned (0,0,0,0) - slices 0-6 of the LUT were empty, so any colour with a dark blue channel
+  became pure black. (rdc_survey apievents now prints numeric arguments.)
+- Cause (shadPS4 texture cache, FindImage/ResolveOverlap): for each LUT slice the render target
+  (2D array, layers = slice+1) correctly resolved to the cached 3D image, but the loop then
+  called ResolveOverlap again with that volume as the request: against ITSELF (equal size + 3D
+  -> ExpandImage = a new 3D image and a full copy per slice: 57 LUT images per frame) and
+  against the stale 8-layer array from before the volume existed (ExpandImage again = its
+  empty layers copied over slices 0-7).
+- Fix: a resolved volume returns itself when it meets itself, and drops (does not copy from)
+  the stale slice array. patches\shadps4-volume-self-overlap.diff (in shadps4-all-changes.diff).
+- Result at the mission start: near-black pixels 31% -> 0%; cars, the Wall, the gun and the
+  hands are all visible in shade.

@@ -1,0 +1,28 @@
+diff --git a/src/video_core/texture_cache/texture_cache.cpp b/src/video_core/texture_cache/texture_cache.cpp
+index c95dc44c..1e14de8d 100644
+--- a/src/video_core/texture_cache/texture_cache.cpp
++++ b/src/video_core/texture_cache/texture_cache.cpp
+@@ -295,6 +295,23 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
+             return {cache_image_id, -1, -1};
+         }
+ 
++        // FindImage keeps walking the other overlaps with the image it has already resolved to.
++        // Once that is a volume: meeting ITSELF must not "expand" it into a fresh copy (one new
++        // 3D image per rendered slice), and meeting the stale 2D-array its slices were once drawn
++        // through must not copy that array over it again - Destiny 1's 32^3 colour-grading LUT
++        // lost slices 0-6 to exactly that, which turned every dark colour into pure black.
++        if (merged_image_id && slot_images[merged_image_id].info.props.is_volume) {
++            if (cache_image_id == merged_image_id) {
++                return {merged_image_id, -1, -1};
++            }
++            if (IsSliceArrayOfVolume(cache_image.info, slot_images[merged_image_id].info)) {
++                if (safe_to_delete) {
++                    FreeImage(cache_image_id);
++                }
++                return {merged_image_id, -1, -1};
++            }
++        }
++
+         const u32 lhs_block_size = image_info.num_bits * image_info.num_samples;
+         const u32 rhs_block_size = cache_image.info.num_bits * cache_image.info.num_samples;
+         if (image_info.BlockDim() != cache_image.info.BlockDim() ||

@@ -331,13 +331,18 @@ def apievents(spec):
     def dump(obj, depth, out):
         name = obj.name
         if obj.NumChildren() == 0:
+            val = ""
             try:
                 val = obj.AsString()
             except Exception:  # noqa: BLE001
-                try:
-                    val = obj.data.basic.u
-                except Exception:  # noqa: BLE001
-                    val = "?"
+                pass
+            if val == "":
+                for getter in ("AsInt", "AsUInt", "AsFloat", "AsResourceId"):
+                    try:
+                        val = getattr(obj, getter)()
+                        break
+                    except Exception:  # noqa: BLE001
+                        continue
             out.append("  " * depth + f"{name} = {val}")
             return
         out.append("  " * depth + f"{name}:")
@@ -506,6 +511,10 @@ def raster(eids):
                    f"slope={r.slopeScaledDepthBias} depthClamp={r.depthClampEnable} "
                    f"vp=({vp.x},{vp.y},{vp.width},{vp.height},{vp.minDepth},{vp.maxDepth}) "
                    f"dtest={ds.depthTestEnable} dwrite={ds.depthWriteEnable} func={ds.depthFunction}")
+        try:
+            out.append(f"{eid}: pushconsts=" + bytes(vk.pushconsts).hex())
+        except Exception as e:  # noqa: BLE001
+            out.append(f"{eid}: pushconsts {e!r}")
     with open(os.path.join(OUT, "raster.txt"), "w", encoding="utf-8") as f:
         f.write(chr(10).join(out) + chr(10))
     ctl.Shutdown()
