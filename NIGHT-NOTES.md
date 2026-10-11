@@ -565,3 +565,11 @@ Vendors:
     then +0x2C = 1 (wear helmet) in all three via the object_file example.
 - Still open: a translucent blue orb at the chest/neck (has always been there); sprint/super
   (empty ability block C+0x78); Dreadnaught (probably TTK DLC ownership).
+
+## 30. Sprint: the sprint action never runs (01:05) - run 20261011-003611-WIN-ABILCAP
+- Character object (C+0x78 block) and peer view (+0x40 block): no code reads either during the
+  Tower load or while pressing L3 (hardware read-watch, 150 s and 14 s). Not the runtime source.
+- Exec breakpoints on c_action_impl_sprint_ability's vtable (0x391940, 0x391C00, 0x391DB0): zero
+  hits while pressing L3 (key x). The sprint action is not being started at all - most likely the
+  biped has no sprint action in its ability set. Next: find where a player biped's action/ability
+  set is built (class/subclass content -> c_action_impl_* instances) and what selects Stormtrance.
