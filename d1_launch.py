@@ -462,6 +462,11 @@ def session(args):
                 # (3v3 Crucible), a leftover of the first pvp_moonbase runs: published for the
                 # Tower it made the game run a PvP match on the Tower map (supers usable, etc.).
                 "D1_AH_ACTIVITY_INDEX": "1",
+                # The in-world APPEARANCE is read from the family-0 peer view (D1_ROSTER_DIR), not
+                # the character file. `d1-oracle character build-peer --inventory
+                # capture-rig/inventory-hunter-full --identity 0,0,1 --with-family2`. The old
+                # rosters-f0-geared was built long ago from another character (headless default).
+                "D1_ROSTER_DIR": str(REPO / "capture-rig" / "rosters-f0-hunter"),
                 "D1_AH_SENSOR_PHASE": "3",
                 # The slot names are not measured any more: the activity host derives them from
                 # the world record's packages (d1_oracle::world_sensors; 100/100 agreement with

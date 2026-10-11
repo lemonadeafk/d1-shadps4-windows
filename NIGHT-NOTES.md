@@ -539,3 +539,10 @@ Vendors:
   instead of 0xFFFF = no model.
 - Equipping an item sends investment 403 inventory_equip_item; the generic reply dropped BAP and
   crashed the game. Responder now answers it with the {u4,u32} composite (same as 701).
+- Activities: the old geared profile also had ONE progression entry, character_level (ordinal 117)
+  = 400000 XP (level 40). Without it the Director treats the character as level 1. Now
+  `profile build ... --all-content --progression 117:400000`; byte-identical to the geared
+  profile outside the item fields.
+- Appearance: in-world look comes from the family-0 peer view (D1_ROSTER_DIR), which was still
+  the old rosters-f0-geared. Now capture-rig/rosters-f0-hunter (character build-peer from the
+  Hunter inventory). Untested.
