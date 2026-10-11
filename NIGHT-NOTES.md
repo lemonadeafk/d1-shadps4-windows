@@ -379,3 +379,21 @@ No more measured Tower inputs. `d1_oracle::world_sensors::derive(world_tag, bubb
 - Not done: closing the hand-over (valid=1 after the values), squad values (alive counts, states),
   objectives, the other bubbles' groups, whether vendors are interactable. The member default
   image is measured, not derived (the harness default-init returns zeros).
+
+## 20. NPCs in every Tower bubble (20:40) - run 20261010-203737-WIN-BUBNPC5, user-verified plaza
+- One udt-5 frame per bubble is built at startup (derive_cached per bubble; region = bubble*8) and
+  armed when the client reports being IN that region: udt 21 +0xB8 = CURRENT region, +0x158 =
+  PENDING. Pending goes back to 0 with the same token when a transition completes, so a pending
+  change only counts when the token advances.
+- The sensor authority table is indexed by BUBBLE, not peer: a bubble's own slots carry owner
+  index = bubble index (slot+0x60 / record+0x48: 0 at the start, 3 in the plaza), and the setter
+  gate tests that bit. Each bubble frame opens entry <bubble> {generation 1, valid 0}.
+  (Section 18's "indexed by peer" was wrong; peer 0 == bubble 0 was a coincidence.)
+- Three failed attempts on the way: frame sent at transition REQUEST (expired before the switch),
+  frame for region 0 sent on completion (pending misread), entry 0 opened for the plaza.
+- Frame build: ~0.6 s each (one name oracle, identical values encoded once).
+- Kind 40 = "performance sensors" (vendor_performance_sensor_avatar/_nm, npc_kneeler, ...), each
+  linked to its squad member; left at default. Vendors show NO interact prompt. The records and
+  packages hold no performance names -> set at runtime by script. Open.
+- Also open: revisiting a bubble (same generation again), closing the hand-over, the served
+  character (Titan body + Warlock super, L3 = super, no sprint).
