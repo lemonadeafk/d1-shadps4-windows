@@ -27,6 +27,30 @@ TOWER_ARGS = ["--inworld", "--world", "city_tower_default1", "--checksum", "0x7f
               "--bubbles", "5", "--chosen", "0-4"]
 
 
+# Other destinations: world facts read from the world record (`<activity>:scenario_client` in
+# capture\world-namespace.tsv, tools\world_names.py): +0x0C checksum, +0x48 bubble count, valid
+# flags in the bubble table. `launch` is the tool that picks the node in the Director.
+DESTINATIONS = {
+    "tower": dict(args=TOWER_ARGS, env=[], launch="launch_tower.py"),
+    "cosmo_patrol": dict(
+        args=["--inworld", "--world", "patrol_deltas_com01", "--checksum", "0x6a556a7f",
+              "--bubbles", "22", "--chosen", "0-21"],
+        env=["D1_AH_SENSOR_WORLD=0x80cb87eb", "D1_AH_ACTIVITY_INDEX=92"],
+        launch="launch_patrol.py"),
+    # "A Guardian Rises" has no Director node for an existing character; the client loads the world
+    # the activity host names, so it is reached through the patrol node with a story activity's
+    # index (165 = Restoration, measured from the Director).
+    "guardian_rises": dict(
+        args=["--inworld", "--world", "act_cosmo_m0_highway", "--checksum", "0x8fe07299",
+              "--bubbles", "22", "--chosen", "0-21"],
+        # :14 = the start bubble (the one holding the content of the mission's first phase).
+        # PLAYER_TEAM=-1: a story mission has no teams; the slot's team must equal the client's.
+        env=["D1_AH_SENSOR_WORLD=0x80cb800d:14", "D1_AH_ACTIVITY_INDEX=165",
+             "D1_AH_SENSOR_PLAYER_TEAM=-1"],
+        launch="launch_patrol.py"),
+}
+
+
 def log(msg):
     print(f"[auto] {time.strftime('%H:%M:%S')} {msg}", flush=True)
 
@@ -60,14 +84,14 @@ def kill():
     log("shadPS4 killed; the launcher restores settings and stops the servers")
 
 
-def drive(name, stop_at, timeout, extra=(), inworld_args=()):
+def drive(name, stop_at, timeout, extra=(), inworld_args=(), dest="tower"):
     if winproc.emu_pids():
         raise SystemExit("an emulator is already running - refusing to start a second one")
     t0 = time.time()
     # Outside our process tree/job: stopping the autopilot must never kill the session (it did on
     # 2026-10-10 - the launcher died with it and could not restore shadPS4's settings).
     flags = subprocess.CREATE_NEW_CONSOLE | subprocess.CREATE_NEW_PROCESS_GROUP | 0x01000000  # BREAKAWAY_FROM_JOB
-    cmd = [sys.executable, os.path.join(ROOT, "d1_launch.py"), *TOWER_ARGS, "--name", name, *extra]
+    cmd = [sys.executable, os.path.join(ROOT, "d1_launch.py"), *DESTINATIONS[dest]["args"], "--name", name, *extra]
     try:
         subprocess.Popen(cmd, cwd=ROOT, creationflags=flags)
     except OSError:
@@ -133,7 +157,7 @@ def drive(name, stop_at, timeout, extra=(), inworld_args=()):
                 # Director route: pick the Tower and press LAUNCH like a player; the game leaves
                 # orbit by itself and d1_inworld.py only does the post-launch steps.
                 log("director route: Set Destination -> Tower -> LAUNCH")
-                subprocess.run([sys.executable, os.path.join(HERE, "launch_tower.py"),
+                subprocess.run([sys.executable, os.path.join(HERE, DESTINATIONS[dest]["launch"]),
                                 os.path.join(run, "director")], cwd=ROOT, check=True)
                 while time.time() < end and "activity:initial_slice_set_loading" not in last_state(run):
                     time.sleep(2)
@@ -188,6 +212,7 @@ def main():
     ap.add_argument("--no-spawn", action="store_true", help="passed to d1_inworld.py")
     ap.add_argument("--director", action="store_true",
                     help="reach the Tower the real way: Director -> Tower -> LAUNCH (no launch poke)")
+    ap.add_argument("--destination", choices=sorted(DESTINATIONS), default="tower")
     a = ap.parse_args()
     import ctypes
     ctypes.windll.user32.SetProcessDPIAware()
@@ -195,12 +220,12 @@ def main():
         kill()
         return 0
     extra = [x for g in a.gpu for x in ("--gpu", g)] + (["--renderdoc"] if a.renderdoc else [])
-    extra += [x for e in a.env for x in ("--env", e)]
+    extra += [x for e in DESTINATIONS[a.destination]["env"] + a.env for x in ("--env", e)]
     inworld_args = ["--no-spawn"] if a.no_spawn else []
     if a.director:
         extra += ["--director"]
         inworld_args += ["--skip-launch"]
-    run = drive(a.name, a.stop_at, a.timeout, extra, inworld_args)
+    run = drive(a.name, a.stop_at, a.timeout, extra, inworld_args, a.destination)
     print(f"RUN {run}")
     return 0
 

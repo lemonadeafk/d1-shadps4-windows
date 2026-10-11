@@ -12,3 +12,4 @@ tools/rdc_survey.json
 *.png
 runs/
 inject/
+capture/world-namespace.tsv

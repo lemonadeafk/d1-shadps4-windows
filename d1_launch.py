@@ -441,8 +441,14 @@ def session(args):
             #  - flag 131 makes the Tower's Director entry available (status 4 instead of
             #    "Requirements Not Met"). tools\director_rules.py prints these rules live.
             # The in-world shortcut launches still need 308/3389, so this is opt-in.
+            #  - flags 2501 / 2502 / 2503 unlock the HEAVY / PRIMARY / SPECIAL weapon slots (found
+            #    2026-10-11 by ddmin over the client's flag plane, scratchpad flagmin.py). Without
+            #    them the character screen shows padlocks, the preview is empty and the biped
+            #    spawns unarmed: the Ghost is the only thing it can hold (no firing, no sprint).
+            #  - 2479 + 4917 + 4992 (same method): the subclass slot with its nodes and the
+            #    artifact slot.
             for name, value in {
-                "D1_UNLOCK_FLAGS": "98,131,419,440,834,2667,5015,5987,6018",
+                "D1_UNLOCK_FLAGS": "98,131,419,440,834,2479,2501,2502,2503,2667,4917,4992,5015,5987,6018",
                 "D1_UNLOCKS": str(REPO / "capture-rig" / "unlocks" / "unlocks-200-campaign.bin"),
                 "D1_FAMILY42": "1",
                 # msg 43 f4.1 field 8 = big-party size. With the empty stub it is 0, a solo player
@@ -528,7 +534,7 @@ def session(args):
                                            "--bind", f"{ip}:4110"],
                                           cwd=REPO, env=env, stdout=open(run / "activity-host.log", "wb"),
                                           stderr=subprocess.STDOUT, creationflags=flags))
-            if not wait_log(run / "activity-host.log", f"activity-host listening on {ip}:4110", timeout=30):
+            if not wait_log(run / "activity-host.log", f"activity-host listening on {ip}:4110", timeout=120):
                 log(f"d1-activity-host did not report its listener - see {run / 'activity-host.log'}")
                 return 1
             log(f"activity host up on 4110 (world {env.get('D1_AH_ACTIVITY', 'pvp_moonbase')}, activity {env.get('D1_AH_ACTIVITY_INDEX', '407')})")

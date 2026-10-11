@@ -596,3 +596,49 @@ Vendors:
   type, ..}, element 0x808027F2): slot 0 = 80, slots 1-6 = 0xFF. NPCs use 82. Sprint would be
   STARTED by the locomotion action's update (type 80 class c_action_impl_physics_driven_locomotion,
   vtable via table entry 80) on L3 - that start condition is the next thing to read.
+
+## 32. Overnight 2026-10-11: beyond the Tower - A GUARDIAN RISES LOADS AND SPAWNS (03:25)
+Screenshots: Desktop\guardian-rises-1.png (first spawn), -2-navmode.png, -3-weapons-unlocked.png;
+all intermediate shots in shadgames\overnight\.
+- World names: `python tools\world_names.py [filter]` rebuilds the activity-symbol list from the
+  packages' own symbol tables (header +0xEC count, +0xF0 offset, 0x44-byte records) ->
+  capture\world-namespace.tsv (untracked). `<activity>` (type 0x808008BA) is a 72-byte entry
+  {name hash +8, [..] scenario_client tag @+0x40}; `<activity>:scenario_client` is the world
+  record. Tags are per package VERSION; newest wins (cosmo_patrols_1 only exists in _0).
+- The client loads whatever world the AH names: launching Patrol (index 92) with the AH on the
+  Tower loaded the Tower. So any world is reachable from any Director node.
+- Director automation: tools\launch_patrol.py (Set Destination -> Earth -> Patrol -> LAUNCH,
+  open-loop cursor from the bottom clamp); tools\autopilot.py --destination
+  {tower,cosmo_patrol,guardian_rises}. Measured from the Director: Patrol the Cosmodrome =
+  activity 92 (hash 0x09fa9d74), Restoration = 165 (0xb9fccac3).
+- Cosmodrome worlds (22 bubbles, all valid): patrol_deltas_com01 = 0x80cb87eb checksum
+  0x6a556a7f; act_cosmo_m0_highway (A Guardian Rises) = 0x80cb800d checksum 0x8fe07299.
+  world_sensors now follows a bubble definition into another package (content +0x1C).
+  Per-bubble derive is ~25 s cold: warm with `examples/world_sensors <tag> <bubble> cache`.
+- PATROL IS BLOCKED on public regions: "Region 'PUB00.00' is PUBLIC but not yet connected".
+  FUN_0077F6B0 needs transition+0x13C(public)==1 -> +0x141 (session state) == 2; state setter
+  FUN_0077B3B0 ("session state being changed from..to..due to"), 2 = connected set in
+  FUN_0077CA20. Protocol in the strings: PAH tabulated data includes us -> PAH assigns
+  AMBASSADORSHIP -> we spin up a public activity session -> PAH broadcasts the advertised public
+  session / activity host -> session-lock tokens. Not attempted yet.
+- A mission starts in PRIVATE regions. Three things were missing:
+  1. the START REGION: FUN_0077E440 reads global_activity_state+0x54 (blob accessor
+     FUN_002A1F50). 0 = bubble 0. The mission record ends with an ordered phase list
+     (0x8080073F, 7 entries); bubbles with table flag 2 carry a per-phase content variant;
+     the FIRST phase (00bc0bb1) is on bubble 14 -> region 112 ("PRV112.1").
+     D1_AH_SENSOR_WORLD=<tag>:<bubble> sets it.
+  2. the TEAM: spawn gate 0x414730 failed at `cmp byte [rax+9],0` (client ready flag
+     slot+0x299), set only when slot+0x250 (our value +0x38) == slot+0x2C8 =
+     (i8)players[i]+0x738. Tower: 0. Story mission: -1. D1_AH_SENSOR_PLAYER_TEAM=-1.
+  3. (found after spawning) the WEAPON SLOTS, below.
+  tools\spawn_state.py prints the whole spawn chain read-only.
+- In the mission: first person, Cosmodrome wall at sunset, movement and camera work, the
+  touchpad opens Nav Mode ("COSMODROME", Go to Orbit). The mission's Ghost squad member exists.
+
+## 33. THE "ORB" / NO SPRINT / NO WEAPONS = LOCKED WEAPON SLOTS (03:50)
+- Character screen in the mission: armour equipped, all three weapon slots + artifact = padlocks.
+  The biped spawns unarmed, so the summoned Ghost (a "pocket weapon") is permanently out:
+  no firing, no sprint, and in the Tower's third person it is the blue orb at the chest.
+- ddmin over the client's unlock-flag plane (diagnostic poke, reopen the screen, read pixels):
+  FLAG 2502 = primary slot (+ the character PREVIEW), 2503 = special, 2501 = heavy.
+  Launcher now grants them (D1_UNLOCK_FLAGS). Subclass/artifact flags: see section 34.

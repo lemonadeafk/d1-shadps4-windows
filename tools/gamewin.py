@@ -25,7 +25,9 @@ VK = {"n": 0x4E, "b": 0x42, "v": 0x56, "c": 0x43, "enter": 0x0D, "up": 0x26, "do
       "f12": 0x7B,
       # left stick = WASD, right stick (camera) = IJKL, L3 (sprint) = x  (input_config/default.ini)
       "w": 0x57, "a": 0x41, "s": 0x53, "d": 0x44, "i": 0x49, "j": 0x4A, "k": 0x4B, "l": 0x4C,
-      "x": 0x58, "space": 0x20, "q": 0x51, "e": 0x45}   # shadPS4 hotkey_capture_frame. NOT f10: the fps hotkey crashed the client (d1preservation)
+      "x": 0x58, "space": 0x20, "q": 0x51, "e": 0x45,
+      # r2 (fire) = o, r1 = u, r3 = m, l1+r1 = f, l3 = lshift
+      "o": 0x4F, "u": 0x55, "m": 0x4D, "f": 0x46, "lshift": 0xA0}   # shadPS4 hotkey_capture_frame. NOT f10: the fps hotkey crashed the client (d1preservation)
 
 WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
 
