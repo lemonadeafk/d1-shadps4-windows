@@ -546,3 +546,22 @@ Vendors:
 - Appearance: in-world look comes from the family-0 peer view (D1_ROSTER_DIR), which was still
   the old rosters-f0-geared. Now capture-rig/rosters-f0-hunter (character build-peer from the
   Hunter inventory). Untested.
+
+## 29. Head fixed: wear-helmet (00:55) - user-verified, Desktop\tower-hunter-helmet.png
+- Customization block 0x8080181A (36 B at +0x0C of character, profile AND peer view) was all
+  zeros. +0x20 (2-bit bool) behaves as DestinyCharacterCustomization.wearHelmet: setting it to 1 in
+  all three made the Prime Zealot helm render; with 0 the head was empty (face fields all zero ->
+  nothing to draw). Field naming was [U] in the repo; this run is the evidence for that one field.
+- Rebuild recipe for the served Hunter set (generated files are NOT in git):
+    d1-oracle item-index write
+    stage loadouts/y1-hunter-vault-of-glass.json -> capture-rig/inventory-hunter-full (legacy
+      elements, see section 28) + Ghost/Artifacts/Vehicle/Horn from capture-rig/inventory
+    d1-oracle inventory rebuild --dir capture-rig/inventory-hunter-full
+    d1-oracle art-arrangement write --inventory capture-rig/inventory-hunter-full
+    d1-oracle inventory rebuild --dir capture-rig/inventory-hunter-full   (picks up art/curves)
+    d1-oracle character build --inventory <dir> --identity 0,0,1 --out capture-rig/characters/char-hunter.bin
+    d1-oracle profile build --inventory <dir> --identity 0,0,1 --all-content --progression 117:400000 --out capture-rig/profiles/profile-hunter.bin
+    d1-oracle character build-peer --inventory <dir> --identity 0,0,1 --with-family2 --out-dir capture-rig/rosters-f0-hunter
+    then +0x2C = 1 (wear helmet) in all three via the object_file example.
+- Still open: a translucent blue orb at the chest/neck (has always been there); sprint/super
+  (empty ability block C+0x78); Dreadnaught (probably TTK DLC ownership).
