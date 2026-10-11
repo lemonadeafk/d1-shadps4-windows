@@ -573,3 +573,8 @@ Vendors:
   hits while pressing L3 (key x). The sprint action is not being started at all - most likely the
   biped has no sprint action in its ability set. Next: find where a player biped's action/ability
   set is built (class/subclass content -> c_action_impl_* instances) and what selects Stormtrance.
+- (01:15, run 20261011-005645-WIN-GRIDCAP2) The talent-grid lookup FUN_0025B960 (vtbl+0x4E0) is
+  NOT called during the Tower load (exec bp @0x25B9A9, 150 s, launch -> in_world). Only the
+  subclass screen uses it. So the in-world ability set is NOT assembled from the subclass item's
+  grid/node states at load; setting nodes will not restore sprint. Source of the player's ability
+  set (and of Stormtrance) still unknown.
