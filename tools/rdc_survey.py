@@ -449,8 +449,69 @@ def debugpixel(spec):
     cap.Shutdown()
 
 
+def postvs(eids):
+    """For each eid: the vertex-shader outputs (all vertices, as floats) -> postvs-<eid>.txt."""
+    import struct as _st
+    cap = rd.OpenCaptureFile()
+    if cap.OpenFile(IN, "", None) != rd.ResultCode.Succeeded:
+        return
+    status, ctl = cap.OpenCapture(rd.ReplayOptions(), None)
+    if status != rd.ResultCode.Succeeded:
+        return
+    for eid in eids:
+        ctl.SetFrameEvent(eid, True)
+        out = []
+        act = ctl.GetAction(eid) if hasattr(ctl, "GetAction") else None
+        m = ctl.GetPostVSData(0, 0, rd.MeshDataStage.VSOut)
+        out.append(f"numIndices={m.numIndices} stride={m.vertexByteStride} idx={m.indexResourceId} "
+                   f"idxw={m.indexByteStride}")
+        raw = ctl.GetBufferData(m.vertexResourceId, m.vertexByteOffset, 0)
+        n = len(raw) // max(1, m.vertexByteStride)
+        for i in range(min(n, 64)):
+            row = raw[i * m.vertexByteStride:(i + 1) * m.vertexByteStride]
+            out.append(f"v{i}: " + " ".join("%.6g" % v for v in _st.unpack("<%df" % (len(row) // 4), row)))
+        if m.indexResourceId != rd.ResourceId.Null() and m.indexByteStride:
+            ib = ctl.GetBufferData(m.indexResourceId, m.indexByteOffset, 0)
+            fmt = {2: "H", 4: "I", 1: "B"}[m.indexByteStride]
+            idx = _st.unpack("<%d%s" % (len(ib) // m.indexByteStride, fmt), ib)
+            out.append("indices " + " ".join(str(x) for x in idx[:96]))
+        with open(os.path.join(OUT, f"postvs-{eid}.txt"), "w", encoding="utf-8") as f:
+            f.write(chr(10).join(out) + chr(10))
+    ctl.Shutdown()
+    cap.Shutdown()
+
+
+def raster(eids):
+    """Rasterizer depth-bias / depth-clamp / viewport depth range per eid -> raster.txt."""
+    cap = rd.OpenCaptureFile()
+    if cap.OpenFile(IN, "", None) != rd.ResultCode.Succeeded:
+        return
+    status, ctl = cap.OpenCapture(rd.ReplayOptions(), None)
+    if status != rd.ResultCode.Succeeded:
+        return
+    out = []
+    for eid in eids:
+        ctl.SetFrameEvent(eid, True)
+        vk = ctl.GetVulkanPipelineState()
+        r = vk.rasterizer
+        vp = vk.viewportScissor.viewportScissors[0].vp if vk.viewportScissor.viewportScissors else None
+        ds = vk.depthStencil
+        out.append(f"{eid}: biasEnable={r.depthBiasEnable} constant={r.depthBias} clamp={r.depthBiasClamp} "
+                   f"slope={r.slopeScaledDepthBias} depthClamp={r.depthClampEnable} "
+                   f"vp=({vp.x},{vp.y},{vp.width},{vp.height},{vp.minDepth},{vp.maxDepth}) "
+                   f"dtest={ds.depthTestEnable} dwrite={ds.depthWriteEnable} func={ds.depthFunction}")
+    with open(os.path.join(OUT, "raster.txt"), "w", encoding="utf-8") as f:
+        f.write(chr(10).join(out) + chr(10))
+    ctl.Shutdown()
+    cap.Shutdown()
+
+
 try:
-    if _cfg.get("debugpixel"):
+    if _cfg.get("raster"):
+        raster(_cfg["raster"])
+    elif _cfg.get("postvs"):
+        postvs(_cfg["postvs"])
+    elif _cfg.get("debugpixel"):
         debugpixel(_cfg["debugpixel"])
     elif _cfg.get("shader"):
         shader(_cfg["shader"])

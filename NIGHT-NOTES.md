@@ -984,3 +984,24 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   leads the player A -> B -> C. The 992bb471 group also names pf_104a_pwr._player_trigger
   (kind 29 sub 37) - the trigger that should start the power cinematic.
 - The camera was in THIRD PERSON on the highway in this run (overnight\g3-now.png) - unexplained.
+
+## 50. Black shadows, continued (2026-10-11 18:30, capture runs\20261010-144838-WIN-SHADOW\noon.rdc)
+- New rdc_survey jobs: {"postvs":[eid]} (vertex-shader outputs + indices), {"raster":[eids]}
+  (depth bias, depth clamp, viewport depth range, depth func).
+- Ruled out: viewport depth mapping. Shadow-map draws (eid 4301-5380, ortho, w=1) write
+  z_ndc unchanged (clip-space z 0.948 -> stored 0.948; viewport min/max -1..1 + negativeOneToOne,
+  depth clamp on, func LessEqual, map cleared to 1). Scene draws write reverse-Z 0.15/w
+  (func GreaterEqual), and the mask pass linearises it correctly (6.6666*d = 1/w).
+- Depth bias in the shadow draws: constant 10-20, slope 4-8 (Vulkan units) - small, not the cause.
+- Hand recomputation of eid 5421 (shader 1719) for three pixels with the captured constants
+  (ssbo +112..+175 = view->light matrix, +240 map size 1536, +272 k 16797): receiver light-space
+  z = 0.988-0.997, but the map is a smooth ground plane at 0.928-0.956 (8x8 grid) -> every
+  receiver is "behind" the map by ~0.05 -> R = 0 everywhere. The matrix puts the CAMERA at
+  shadow ndc (-0.03, -1.01, 1.0002): the bottom edge and the far plane of the light frustum,
+  which is not where cascade 0 should sit. Also the uv mapping uses attr0 = (1,1,-1,-1) from
+  the box VS, which flips both axes relative to how the map was rasterised.
+- Leading hypotheses: (a) the receiver-side light matrix in buffer 213 is stale or from another
+  cascade (shadPS4 buffer cache / upload timing), (b) attr0 (cascade scale/bias from the box
+  vertex shader) is wrong in shadPS4. NEXT: dump the box VS (eid 5421 vertex stage) and its
+  inputs to see where attr0 = (1,1,-1,-1) comes from; compare the light matrix the shadow-map
+  draws used (their VS constants) with the receiver matrix.

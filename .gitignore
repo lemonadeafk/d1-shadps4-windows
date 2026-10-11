@@ -13,3 +13,8 @@ tools/rdc_survey.json
 runs/
 inject/
 capture/world-namespace.tsv
+
+# game archives made for transfers - never commit
+*.rar
+*.7z
+*.zip
