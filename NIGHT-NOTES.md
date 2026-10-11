@@ -977,3 +977,10 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   pt_nux_ghost_light_up_start/continue (kind 29).
 - Served {1, 1, null} to ho_ghostlight: applied, no visible change. Kind 28 values are NOT
   applied (the client reports kind 28 in its own udt-6 sense updates - client side).
+- Normal start (bubble 14, autopilot destination guardian_rises_objects, run GHOST3): the start
+  area has its own Ghost: group ecf574b5 = sq_ghost / sq_ghost__ghost (member has an actor,
+  0x4ef58000), perf_ghost (kind 40), guide objects o_ghost_ab/_int, o_ghost_bc/_int,
+  o_ghost_c/_int (kind 4) and triggers pt_bubble, pt_ab, pt_ab_1, pt_ab_2 (kind 29): the Ghost
+  leads the player A -> B -> C. The 992bb471 group also names pf_104a_pwr._player_trigger
+  (kind 29 sub 37) - the trigger that should start the power cinematic.
+- The camera was in THIRD PERSON on the highway in this run (overnight\g3-now.png) - unexplained.
