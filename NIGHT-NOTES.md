@@ -886,3 +886,23 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   no object -> FUN_00124A10 + FUN_00124DF0 create it; value+0 is a sequence number (rec+0x2A0).
 - Next run: `autopilot.py --director --destination guardian_rises_b3_objects` serves
   capture\values\object_exists.bin (default image with +8 = 1) to every kind-4 slot.
+
+## 46. All scripted objects created from served state; lights need object STATE flags (14:20)
+- Run LIGHTS2 (object_exists.bin to every kind-4 slot): 7 of 21 objects created on arrival
+  (grates, nut_back, gating_back, the m0 weapon); the other 14 (lights, doors, cables, control,
+  chest, tripwires = the ones whose object definition has a dependency tag at +0x98) failed on
+  the first apply. A frame with a CHANGED value (seq value+0 = 1, injected) created them at once.
+  The client re-applies a slot only when its value changes; identical repeats are ignored.
+- AH bug found + fixed (listener.rs): on_tick only ran when the socket was idle for `poll`; in a
+  mission the client streams udt-6 sense updates, so repeats AND injected frames stopped after
+  ~4 min. The tick now runs whenever `poll` has elapsed.
+- AH: D1_AH_SENSOR_KIND_RESEQ=<kinds>: an alternate frame with those kinds' value+0 = 1 is built
+  per bubble; every other repeat sends it. Run LIGHTS3 (autopilot destination
+  guardian_rises_b3_objects): all 21 kind-4 objects exist, zero pokes, no injection.
+- Still dark: the setter's applier FUN_00125250 walks the object's state components and calls each
+  one's handler (FUN_003529F0, virtual) with value+0x20 = {2-bit mode, +0x10: struct 0x80804153
+  whose +0x40 is a kind-0x22 DYNAMIC FLAGS bitset}. Light on/off is almost certainly a flag there.
+  Any non-zero mode makes the oracle encoder fault (READ_UNMAPPED calling 0x2C8FF0, RIP 0x105B74A)
+  - the known harness limitation (activity_host.rs FIELD_KIND_DYNAMIC_FLAGS: the game's dynamic
+  flags pool is not set up in the static image). NEXT: give the encoder harness a dynamic-flags
+  pool so object states (and probably objective/script states) can be served.
