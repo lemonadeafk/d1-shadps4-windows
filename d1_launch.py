@@ -413,6 +413,11 @@ def session(args):
             "D1_PUSH_FAMILY": "4,3",
             "D1_CHARACTER_LIFECYCLE": "1",
             "D1_PROFILE_FILE": str(REPO / "capture-rig" / "profiles" / "profile-old-russia.bin"),
+            # The responder serves the item inventory (family 4/3) ONLY when this is set - its
+            # startup table shows the path as "[default]" either way. Without it the client has an
+            # equipped list and no items behind it (found 2026-10-10: the subclass element was
+            # nowhere in guest memory), so nothing the subclass item carries can take effect.
+            "D1_INVENTORY": str(REPO / "capture-rig" / "inventory"),
             "D1_ACCOUNT_TRACE_OUT": str(run / "account-trace.bin"),
             "RUN_OUT": str(run),
         }.items():

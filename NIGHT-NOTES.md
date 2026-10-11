@@ -461,3 +461,23 @@ Vendors:
   and holding square produced no message naming his performance sensor or member.
 - content_grep is slow by construction (the game's Oodle under Unicorn, every entry, no index):
   fine for a few-MB package, hopeless for ps4_ui_social (590 MB).
+
+## 24. Character: the inventory was never being served (22:35)
+- Three "fixes" (talent grid on the subclass, node states on) changed nothing because none
+  reached the client. Check that should have come first: search guest memory for the subclass
+  SOID 0xD100000000000301 - 3 hits, all the 64-byte EQUIPPED list entries {soid, content index
+  710}; no 184-byte item element anywhere.
+- Cause: d1-responder serves family 4/3 only `if let Ok(spec) = std::env::var("D1_INVENTORY")`.
+  Its startup table prints `capture-rig/inventory [default]` whether or not it is set, and the
+  Windows launcher never set it. d1_launch.py now sets D1_INVENTORY. Run 20261010-222959-WIN-INV:
+  responder logs 13 inventory items; guest memory has the full Striker element (level 40,
+  grid 132, 36 node states = 1).
+- Talent grid facts (all from content / code, valid regardless): element +0x58 = grid index,
+  +0x5A = 36 node-state bytes (0 = off, N = active at step N; FUN_002824C0). A subclass
+  definition names its grid as the u32 before tag 0x80801A06: Bladedancer 130, Gunslinger 131,
+  Striker 132, Defender 133, Sunsinger 134, Voidwalker 135, Nightstalker 888, Sunbreaker 889,
+  Stormcaller 890. `d1-oracle inventory rebuild` now writes it for the Subclass bucket
+  (--subclass-node-state N sets all nodes; an experiment, not a real build).
+- Lesson: verify the data ARRIVED (read it back from the guest) before judging its effect.
+- Rebuilding the whole inventory on this PC drops helmet fields (no art-arrangement table here);
+  only 00-Subclass.bin was replaced. Backup: capture-rig\inventory.bak-no-grid.
