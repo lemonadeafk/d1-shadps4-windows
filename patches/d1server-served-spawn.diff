@@ -118,10 +118,21 @@ index c535359..e959af6 100644
              Err(e) => {
                  events.push(AhEvent::NamedGate { what: "AH wire codec", detail: e.to_string() });
 diff --git a/d1-server/crates/d1-activity-host/src/main.rs b/d1-server/crates/d1-activity-host/src/main.rs
-index d6bf57f..0db111e 100644
+index d6bf57f..019d7c3 100644
 --- a/d1-server/crates/d1-activity-host/src/main.rs
 +++ b/d1-server/crates/d1-activity-host/src/main.rs
-@@ -496,18 +496,36 @@ fn main() -> anyhow::Result<()> {
+@@ -487,7 +487,9 @@ fn main() -> anyhow::Result<()> {
+             // phase (`record+0x1AC`) the player-spawn gate reads. Off unless `D1_AH_SENSOR_PHASE`
+             // is set - this is `synthetic-minimal` and its post-pass dispatch is `[U]` until the
+             // live watch on `record+0x1AC` confirms it. ⇒ design/activity-lifetime-state.md.
+-            let sensor_payload = match std::env::var("D1_AH_SENSOR_PHASE")
++            // `bubble = None` is the frame for the bubble the world loads into; `Some(b)` is the
++            // frame sent when the client transitions into bubble `b` (its groups differ).
++            let build_sensor_for = |bubble: Option<usize>| -> Option<Vec<u8>> { match std::env::var("D1_AH_SENSOR_PHASE")
+                 .ok()
+                 .and_then(|s| s.trim().parse::<i8>().ok())
+             {
+@@ -496,18 +498,39 @@ fn main() -> anyhow::Result<()> {
                      // client's globals table). The default is the measured in-world pvp_moonbase
                      // group-0 hash; a different map needs `D1_AH_SENSOR_NAME_HASH` set from
                      // `d1-replay sensor-name <snapshot>`. gen must equal the client's `world+0x1D`.
@@ -129,7 +140,10 @@ index d6bf57f..0db111e 100644
 +                    // `D1_AH_SENSOR_WORLD` the lifetime record's {hash, kind, sub} comes from the
 +                    // world's packages (`d1_oracle::world_sensors`); the three env knobs remain as
 +                    // explicit overrides.
-+                    let derived = derived_world_sensors();
++                    let derived = derived_world_sensors(bubble);
++                    if bubble.is_some() && derived.is_none() {
++                        return None;
++                    }
 +                    let lifetime = derived.and_then(|w| w.lifetime());
 +                    if let Some(w) = derived {
 +                        if w.checksum != activity_checksum {
@@ -159,15 +173,17 @@ index d6bf57f..0db111e 100644
                      let gen = std::env::var("D1_AH_SENSOR_GEN")
                          .ok()
                          .and_then(&parse_u32)
-@@ -526,9 +544,31 @@ fn main() -> anyhow::Result<()> {
+@@ -526,9 +549,33 @@ fn main() -> anyhow::Result<()> {
                          name_sub,
                          phase,
                          tail,
-+                        init: sensor_init_manifest(),
++                        init: sensor_init_manifest(bubble),
 +                        // ⭐ `D1_AH_SENSOR_TIME_OF_DAY=<fraction>`: the lifetime value also sets
 +                        // the world clock (0.5 = noon); unset = the client's midnight default.
++                        // Only on arrival: a transition frame must not turn the clock back.
 +                        time_of_day: std::env::var("D1_AH_SENSOR_TIME_OF_DAY")
 +                            .ok()
++                            .filter(|_| bubble.is_none())
 +                            .and_then(|v| v.trim().parse::<f32>().ok()),
 +                        // ⭐ `D1_AH_SENSOR_AUTHORITY=<peer index>[:<generation>[:<valid 0|1>]]`:
 +                        // the sensor authority table entry for that peer (see SensorAuthority).
@@ -191,7 +207,30 @@ index d6bf57f..0db111e 100644
                              tracing::info!(
                                  "⭐⭐ D1_AH_SENSOR_PHASE={phase} - armed a udt-5 sensor_auth_update \
                                   ({} bytes) to write activity lifetime phase {phase} into \
-@@ -564,6 +604,13 @@ fn main() -> anyhow::Result<()> {
+@@ -551,7 +598,21 @@ fn main() -> anyhow::Result<()> {
+                     }
+                 }
+                 None => None,
+-            };
++            } };
++            let sensor_payload = build_sensor_for(None);
++            // ⭐ One frame per bubble, keyed by region id (`bubble * 8`): each bubble loads its own
++            // squad/objective groups, whose slots need initial state and member values when the
++            // player walks in. Sent by `ActivityInstance::follow_slice_transition`.
++            let mut bubble_sensor_payloads = std::collections::BTreeMap::new();
++            if sensor_payload.is_some() {
++                let bubbles = derived_world_sensors(None).map_or(0, |w| w.bubble_hashes.len());
++                for b in 0..bubbles {
++                    if let Some(p) = build_sensor_for(Some(b)) {
++                        tracing::info!("bubble {b} (region {}): {}-byte sensor frame ready", b * 8, p.len());
++                        bubble_sensor_payloads.insert((b * 8) as u32, p);
++                    }
++                }
++            }
+ 
+             // ⭐ `D1_AH_SENSOR_REPEAT_S`: re-send the armed sensor frame every N seconds instead of
+             // once. The once-after-Live send lands during world load before the content record
+@@ -564,6 +625,13 @@ fn main() -> anyhow::Result<()> {
              if let Some(s) = sensor_repeat_s {
                  tracing::info!("udt-5 sensor repeat armed: every {s} s while Live");
              }
@@ -205,7 +244,13 @@ index d6bf57f..0db111e 100644
  
              let session_id = format!("d1ah-{ah_id:016x}");
              let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
-@@ -584,6 +631,9 @@ fn main() -> anyhow::Result<()> {
+@@ -579,11 +647,15 @@ fn main() -> anyhow::Result<()> {
+                     if let Some((r, p, t)) = pah_region {
+                         i.set_pah_region(r, p, t);
+                     }
++                    i.set_bubble_sensor_payloads(bubble_sensor_payloads.clone());
+                     if let Some(bytes) = sensor_payload.clone() {
+                         i.set_sensor_payload(bytes);
                          if let Some(s) = sensor_repeat_s {
                              i.set_sensor_repeat(std::time::Duration::from_secs(s));
                          }
@@ -215,7 +260,7 @@ index d6bf57f..0db111e 100644
                      }
                      i.set_host_heartbeat(std::time::Duration::from_millis(heartbeat_ms));
                      i
-@@ -593,3 +643,158 @@ fn main() -> anyhow::Result<()> {
+@@ -593,3 +665,158 @@ fn main() -> anyhow::Result<()> {
          }
      }
  }
@@ -225,7 +270,7 @@ index d6bf57f..0db111e 100644
 +/// default-state entry ahead of the phase entry: the client only runs the setter post-pass once
 +/// none of these slots is still awaiting its initial state (`FUN_002D0B70`). Measured per world
 +/// (Windows glue: `capture/tower-sensor-init.txt`). Unset = the old single-entry frame.
-+fn sensor_init_manifest() -> Vec<d1_oracle::sensor::SensorInitEntry> {
++fn sensor_init_manifest(bubble: Option<usize>) -> Vec<d1_oracle::sensor::SensorInitEntry> {
 +    let mut out = Vec::new();
 +    let (path, text) = match std::env::var("D1_AH_SENSOR_INIT") {
 +        Ok(path) => match std::fs::read_to_string(&path) {
@@ -238,7 +283,7 @@ index d6bf57f..0db111e 100644
 +        // No measured file: derive the slots from content (every slot but the lifetime record,
 +        // which the phase entry itself carries).
 +        Err(_) => {
-+            if let Some(w) = derived_world_sensors() {
++            if let Some(w) = derived_world_sensors(bubble) {
 +                out.extend(
 +                    w.slots
 +                        .iter()
@@ -345,34 +390,34 @@ index d6bf57f..0db111e 100644
 +/// ⭐ `D1_AH_SENSOR_WORLD=<world record tag>[:<initial bubble>]`: derive the world's sensor slots
 +/// from its packages (`$D1_PKGDIR`) instead of a measured manifest - the init entries, the
 +/// lifetime record's name and the player slots. Derived once (≈8 s for the Tower).
-+fn derived_world_sensors() -> Option<&'static d1_oracle::world_sensors::WorldSensors> {
-+    static CELL: std::sync::OnceLock<Option<d1_oracle::world_sensors::WorldSensors>> =
-+        std::sync::OnceLock::new();
-+    CELL.get_or_init(|| {
-+        let spec = std::env::var("D1_AH_SENSOR_WORLD").ok()?;
-+        let mut it = spec.split(':');
-+        let tag = u32::from_str_radix(it.next()?.trim().trim_start_matches("0x"), 16).ok()?;
-+        let bubble: usize = it.next().and_then(|b| b.trim().parse().ok()).unwrap_or(0);
-+        let derived = d1_oracle::oodle::Content::open_default()
-+            .and_then(|mut c| d1_oracle::world_sensors::derive(&mut c, tag, bubble));
-+        match derived {
++fn derived_world_sensors(bubble: Option<usize>) -> Option<&'static d1_oracle::world_sensors::WorldSensors> {
++    static CELL: std::sync::Mutex<
++        std::collections::BTreeMap<usize, Option<&'static d1_oracle::world_sensors::WorldSensors>>,
++    > = std::sync::Mutex::new(std::collections::BTreeMap::new());
++    let spec = std::env::var("D1_AH_SENSOR_WORLD").ok()?;
++    let mut it = spec.split(':');
++    let tag = u32::from_str_radix(it.next()?.trim().trim_start_matches("0x"), 16).ok()?;
++    let initial: usize = it.next().and_then(|b| b.trim().parse().ok()).unwrap_or(0);
++    let bubble = bubble.unwrap_or(initial);
++    let mut cell = CELL.lock().ok()?;
++    *cell.entry(bubble).or_insert_with(|| {
++        match d1_oracle::world_sensors::derive_cached(tag, bubble) {
 +            Ok(w) => {
 +                tracing::info!(
-+                    "⭐ D1_AH_SENSOR_WORLD={spec}: {} sensor slots in groups {:x?} derived from                      content (checksum {:#010x}, lifetime {:x?})",
++                    "⭐ D1_AH_SENSOR_WORLD={tag:#010x} bubble {bubble}: {} sensor slots in groups {:x?}                      derived from content (checksum {:#010x}, lifetime {:x?})",
 +                    w.slots.len(),
 +                    w.group_hashes,
 +                    w.checksum,
 +                    w.lifetime().map(|l| (l.name_hash, l.kind, l.sub))
 +                );
-+                Some(w)
++                Some(&*Box::leak(Box::new(w)))
 +            }
 +            Err(e) => {
-+                tracing::error!("⛔ D1_AH_SENSOR_WORLD={spec}: {e} - no derived sensor slots");
++                tracing::warn!("D1_AH_SENSOR_WORLD={tag:#010x} bubble {bubble}: {e} - no derived sensor slots");
 +                None
 +            }
 +        }
 +    })
-+    .as_ref()
 +}
 diff --git a/d1-server/crates/d1-activity-host/src/messages.rs b/d1-server/crates/d1-activity-host/src/messages.rs
 index 4e17610..f7d2db5 100644
@@ -428,10 +473,10 @@ index 4e17610..f7d2db5 100644
      pub fn pah_region_id(&self) -> u32 {
          let o = Self::PAH_REGIONS + Self::PAH_REGION_ID;
 diff --git a/d1-server/crates/d1-activity-host/src/state.rs b/d1-server/crates/d1-activity-host/src/state.rs
-index 891ceb8..a255730 100644
+index 891ceb8..a87012a 100644
 --- a/d1-server/crates/d1-activity-host/src/state.rs
 +++ b/d1-server/crates/d1-activity-host/src/state.rs
-@@ -222,6 +222,10 @@ pub struct ActivityInstance {
+@@ -222,6 +222,15 @@ pub struct ActivityInstance {
      /// content record exists**, and the applier drops it silently (task #4) - so a repeating send
      /// is how at least one copy arrives after the world is resident.
      sensor_repeat: Option<Duration>,
@@ -439,21 +484,33 @@ index 891ceb8..a255730 100644
 +    /// every frame re-defaults ~100 live slots (`fresh=1`); a real host sends initial state once,
 +    /// so the repeats should end once the world has had time to become resident.
 +    sensor_repeat_max: Option<u64>,
++    /// `sensors_sent` when the current burst of repeats began (the cap counts from here).
++    sensor_burst_base: u64,
++    /// Per-bubble sensor frames keyed by region id; a transition into that region re-arms the
++    /// sender with it (each bubble loads its own squad/objective groups).
++    bubble_sensor_payloads: std::collections::BTreeMap<u32, Vec<u8>>,
      /// When the sensor frame last went out (repeat mode pacing).
      sensor_last_sent: Option<Instant>,
  }
-@@ -320,6 +324,7 @@ impl ActivityInstance {
+@@ -320,6 +329,9 @@ impl ActivityInstance {
              sensor_sent: false,
              sensors_sent: 0,
              sensor_repeat: None,
 +            sensor_repeat_max: None,
++            sensor_burst_base: 0,
++            bubble_sensor_payloads: std::collections::BTreeMap::new(),
              sensor_last_sent: None,
          }
      }
-@@ -435,6 +440,11 @@ impl ActivityInstance {
+@@ -435,6 +447,16 @@ impl ActivityInstance {
          self.sensor_repeat = Some(every);
      }
  
++    /// The per-bubble frames; see [`Self::bubble_sensor_payloads`].
++    pub fn set_bubble_sensor_payloads(&mut self, payloads: std::collections::BTreeMap<u32, Vec<u8>>) {
++        self.bubble_sensor_payloads = payloads;
++    }
++
 +    /// Cap the repeating mode at `max` frames in total ([`Self::sensor_repeat_max`]).
 +    pub fn set_sensor_repeat_max(&mut self, max: u64) {
 +        self.sensor_repeat_max = Some(max);
@@ -462,17 +519,17 @@ index 891ceb8..a255730 100644
      /// ⭐⭐ The udt-5 `sensor_auth_update`, sent **once** after the instance reaches [`Live`]
      /// (or on an interval, in [`Self::set_sensor_repeat`] mode).
      ///
-@@ -462,6 +472,9 @@ impl ActivityInstance {
+@@ -462,6 +484,9 @@ impl ActivityInstance {
              }
              // Repeat mode: pace on the interval since the last send.
              Some(every) => {
-+                if self.sensor_repeat_max.is_some_and(|m| self.sensors_sent >= m) {
++                if self.sensor_repeat_max.is_some_and(|m| self.sensors_sent - self.sensor_burst_base >= m) {
 +                    return None;
 +                }
                  if let Some(last) = self.sensor_last_sent {
                      if now.saturating_duration_since(last) < every {
                          return None;
-@@ -586,6 +599,23 @@ impl ActivityInstance {
+@@ -586,6 +611,23 @@ impl ActivityInstance {
          // the operator reads it; every re-publish after it logs at DEBUG, because a refresh every
          // few seconds repeating the same receipt turns the run log into noise and hides the
          // warnings. The condition is the join/refresh discriminator we already track.
@@ -496,7 +553,7 @@ index 891ceb8..a255730 100644
          match self.pah_region {
              Some((region, peer, token)) => match m.set_pah_region(region, peer, token) {
                  Ok(()) if first => tracing::info!(
-@@ -817,13 +847,52 @@ impl ActivityInstance {
+@@ -817,13 +859,59 @@ impl ActivityInstance {
              //
              // Accepted and recorded, not acted on. A stub with one peer has nothing to reserve
              // against, and `43 reservations_failed` is for failures we cannot have.
@@ -542,6 +599,13 @@ index 891ceb8..a255730 100644
 +            region
 +        );
 +        self.pah_region = Some((region, peer, token));
++        // The bubble being entered has its own sensor slots: start a fresh burst of its frame.
++        if let Some(p) = self.bubble_sensor_payloads.get(&region) {
++            tracing::info!("⭐ arming the {}-byte sensor frame of region {region}", p.len());
++            self.sensor_payload = Some(p.clone());
++            self.sensor_burst_base = self.sensors_sent;
++            self.sensor_last_sent = None;
++        }
 +        match self.join_request_image.clone().and_then(|img| self.build_membership(&img)) {
 +            Some(m) => vec![AhPush::new(self.ah_id, AhMessage::ReplicateMembership(m))],
 +            None => Vec::new(),
@@ -760,7 +824,7 @@ index b58427a..234cb07 100644
          // ⭐ Everything allocated from here on is one call's scratch. Nothing after this line may
          // allocate scaffolding that outlives a call - `begin_call` releases it.
 diff --git a/d1-server/crates/d1-oracle/src/sensor.rs b/d1-server/crates/d1-oracle/src/sensor.rs
-index 0f39932..5b61ea2 100644
+index 0f39932..fcc21b7 100644
 --- a/d1-server/crates/d1-oracle/src/sensor.rs
 +++ b/d1-server/crates/d1-oracle/src/sensor.rs
 @@ -90,7 +90,7 @@ const NONE_U32: u32 = 0xFFFF_FFFF;
@@ -904,7 +968,7 @@ index 0f39932..5b61ea2 100644
      }
  
      /// ⭐ Assemble the full 59-byte `sensor_auth_update` payload.
-@@ -163,9 +270,51 @@ impl SensorPhaseUpdate {
+@@ -163,9 +270,64 @@ impl SensorPhaseUpdate {
          let (value_bits, value_pay) = self.value_bits()?;
          let mut w = BitWriter::default();
          w.put(u64::from(self.gen), 8);
@@ -929,14 +993,27 @@ index 0f39932..5b61ea2 100644
 +        }
          w.put(0, 32); // stamp
          w.put(1, 1); // init
++        // One oracle encodes every name, and identical values are encoded once: a frame carries
++        // ~100 names and e.g. 26 byte-identical squad-member values, and constructing an oracle
++        // per entry made the frame take ~20 s to build.
++        let mut names = ObjectOracle::new(TAG_NAME_REF)?;
++        let mut memo: Vec<((u32, &[u8]), (u32, Vec<u8>))> = Vec::new();
 +        for e in &self.init {
-+            let (nb, np) = name_ref_bits(e.name_hash, e.name_i8, e.name_sub)?;
++            let (nb, np) = name_ref_bits_with(&mut names, e.name_hash, e.name_i8, e.name_sub)?;
 +            w.put(1, 1); // has_entry
 +            w.raw(&np, nb as usize);
 +            let value = match &e.value {
 +                Some((tag, image)) => {
-+                    let v = ObjectOracle::new(*tag)?.encode(image, 0x1_0000)?;
-+                    Some((v.bits, v.payload))
++                    let key = (*tag, image.as_slice());
++                    let hit = memo.iter().find(|(k, _)| *k == key).map(|(_, v)| v.clone());
++                    Some(match hit {
++                        Some(v) => v,
++                        None => {
++                            let v = ObjectOracle::new(*tag)?.encode(image, 0x1_0000)?;
++                            memo.push((key, (v.bits, v.payload.clone())));
++                            (v.bits, v.payload)
++                        }
++                    })
 +                }
 +                None => None,
 +            };
@@ -957,7 +1034,7 @@ index 0f39932..5b61ea2 100644
          w.put(1, 1); // has_entry
          w.raw(&name_pay, name_bits as usize);
          w.put(u64::from(2 + value_bits), 32); // body_bit_length = fresh + presence + value
-@@ -173,6 +322,13 @@ impl SensorPhaseUpdate {
+@@ -173,6 +335,13 @@ impl SensorPhaseUpdate {
          w.put(1, 1); // presence
          w.raw(&value_pay, value_bits as usize);
          w.put(0, 1); // terminator (has_entry = 0)
@@ -971,24 +1048,28 @@ index 0f39932..5b61ea2 100644
          w.finish().map_err(|n| {
              OracleError::Shape(format!(
                  "sensor frame is {n} bits, not a byte multiple - a field width is wrong"
-@@ -181,6 +337,16 @@ impl SensorPhaseUpdate {
+@@ -181,6 +350,20 @@ impl SensorPhaseUpdate {
      }
  }
  
 +/// The `{hash, i8, i16}` name reference through the client's own object codec.
 +fn name_ref_bits(hash: u32, i8_: u8, sub: i16) -> Result<(u32, Vec<u8>)> {
++    name_ref_bits_with(&mut ObjectOracle::new(TAG_NAME_REF)?, hash, i8_, sub)
++}
++
++fn name_ref_bits_with(o: &mut ObjectOracle, hash: u32, i8_: u8, sub: i16) -> Result<(u32, Vec<u8>)> {
 +    let mut b = vec![0u8; 8];
 +    put_u32(&mut b, 0, hash);
 +    b[4] = i8_;
 +    b[6..8].copy_from_slice(&sub.to_le_bytes());
-+    let e = ObjectOracle::new(TAG_NAME_REF)?.encode(&b, 0x1_0000)?;
++    let e = o.encode(&b, 0x1_0000)?;
 +    Ok((e.bits, e.payload))
 +}
 +
  fn put_u32(b: &mut [u8], off: usize, v: u32) {
      b[off..off + 4].copy_from_slice(&v.to_le_bytes());
  }
-@@ -243,6 +409,9 @@ fn audit(phase: i8, tail: Option<(u32, u32)>) -> SensorPhaseUpdate {
+@@ -243,6 +426,9 @@ fn audit(phase: i8, tail: Option<(u32, u32)>) -> SensorPhaseUpdate {
          name_sub: AUDIT_NAME_SUB,
          phase,
          tail,
@@ -1000,10 +1081,10 @@ index 0f39932..5b61ea2 100644
  
 diff --git a/d1-server/crates/d1-oracle/src/world_sensors.rs b/d1-server/crates/d1-oracle/src/world_sensors.rs
 new file mode 100644
-index 0000000..98bf442
+index 0000000..0f70ceb
 --- /dev/null
 +++ b/d1-server/crates/d1-oracle/src/world_sensors.rs
-@@ -0,0 +1,213 @@
+@@ -0,0 +1,271 @@
 +// SPDX-FileCopyrightText: Copyright 2026 Destiny 1 Preservation Project
 +// SPDX-License-Identifier: GPL-2.0-or-later
 +
@@ -1216,6 +1297,64 @@ index 0000000..98bf442
 +        group_hashes: groups.iter().map(|g| g.hash).collect(),
 +        slots,
 +    })
++}
++
++impl WorldSensors {
++    /// A line-oriented dump for the on-disk cache (content never changes under a pinned dump).
++    pub fn to_text(&self) -> String {
++        let hex = |v: &[u32]| v.iter().map(|x| format!("{x:08x}")).collect::<Vec<_>>().join(" ");
++        let mut t = format!("checksum {:08x}
++bubbles {}
++groups {}
++", self.checksum,
++            hex(&self.bubble_hashes), hex(&self.group_hashes));
++        for s in &self.slots {
++            t += &format!("slot {:08x} {} {} {:08x} {:08x}
++", s.name_hash, s.kind, s.sub,
++                s.value_tag, s.part2_tag.unwrap_or(u32::MAX));
++        }
++        t
++    }
++
++    pub fn from_text(t: &str) -> Option<Self> {
++        let hexes = |s: &str| s.split_whitespace().map(|x| u32::from_str_radix(x, 16).ok()).collect::<Option<Vec<u32>>>();
++        let mut w = WorldSensors { checksum: 0, bubble_hashes: vec![], group_hashes: vec![], slots: vec![] };
++        for line in t.lines() {
++            let (key, rest) = line.split_once(' ').unwrap_or((line, ""));
++            match key {
++                "checksum" => w.checksum = u32::from_str_radix(rest.trim(), 16).ok()?,
++                "bubbles" => w.bubble_hashes = hexes(rest)?,
++                "groups" => w.group_hashes = hexes(rest)?,
++                "slot" => {
++                    let f: Vec<&str> = rest.split_whitespace().collect();
++                    let [h, k, sub, v, p2] = f.as_slice() else { return None };
++                    let p2 = u32::from_str_radix(p2, 16).ok()?;
++                    w.slots.push(SensorSlot {
++                        name_hash: u32::from_str_radix(h, 16).ok()?,
++                        kind: k.parse().ok()?,
++                        sub: sub.parse().ok()?,
++                        value_tag: u32::from_str_radix(v, 16).ok()?,
++                        part2_tag: (p2 != u32::MAX).then_some(p2),
++                    });
++                }
++                _ => {}
++            }
++        }
++        Some(w)
++    }
++}
++
++/// [`derive`] behind a disk cache in the temp directory (≈8 s per bubble uncached).
++pub fn derive_cached(world_tag: u32, bubble: usize) -> Result<WorldSensors> {
++    let dir = std::env::temp_dir().join("d1-world-sensors");
++    let path = dir.join(format!("v1-{world_tag:08x}-{bubble}.txt"));
++    if let Some(w) = std::fs::read_to_string(&path).ok().and_then(|t| WorldSensors::from_text(&t)) {
++        return Ok(w);
++    }
++    let w = derive(&mut Content::open_default()?, world_tag, bubble)?;
++    let _ = std::fs::create_dir_all(&dir);
++    let _ = std::fs::write(&path, w.to_text());
++    Ok(w)
 +}
 diff --git a/d1-server/crates/d1-responder/src/main.rs b/d1-server/crates/d1-responder/src/main.rs
 index 6a76336..b265cc4 100644
