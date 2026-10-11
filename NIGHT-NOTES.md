@@ -397,3 +397,22 @@ No more measured Tower inputs. `d1_oracle::world_sensors::derive(world_tag, bubb
   packages hold no performance names -> set at runtime by script. Open.
 - Also open: revisiting a bubble (same generation again), closing the hand-over, the served
   character (Titan body + Warlock super, L3 = super, no sprint).
+
+## 21. Character and vendor prompts - findings, no fix (20:55)
+Character:
+- The served inventory's subclass is Striker (Titan, hash 0x925CDEEA) - `d1-oracle inventory
+  rebuild --dry-run` (needs capture-rig\item-content-index.tsv: `d1-oracle item-index write`).
+- Yet L3 fires STORMTRANCE (Warlock Stormcaller) on the Titan body (screenshot l3_1.png), and
+  there is no sprint. shadPS4's input_config\default.ini is clean (l3 = l3). Supers should not
+  work in a social space at all. Cause unknown: not key bindings, not the staged subclass item.
+Vendors:
+- In the plaza Rahool has a nameplate and a "[] Approach" prompt; holding square does nothing and
+  sends nothing to the server (701/702 are periodic sync; "drought" lines are status dumps).
+- Performance sensor (kind 40, value 0x80800556, setter FUN_00128B30) just stores 0x30 bytes at
+  rec+0x1AC. The per-actor update FUN_0013B460 reads it via FUN_00128F60: if value+0 != FNV basis
+  and value+8 (sequence) > actor+0xABC, it starts the performance {hash A = value+0, hash B =
+  value+4} through FUN_00137920. So value = {performance name hash, second hash, sequence, list}.
+- The valid performance NAMES are not in the sensor records, the groups, or as text in the Tower
+  packages ("approach" only matches an enemy animation list, entry 3309 of the ambient package).
+  Next: dig the per-NPC performance table out of the running game (inside FUN_00137920's lookup)
+  and reverse the hashes, or find the script that sets them.
