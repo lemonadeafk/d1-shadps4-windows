@@ -916,3 +916,28 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   NEXT: dump the descriptor bytes the walker is reading (rdi/r14 at the fault) and compare with
   the static 0x80804153 record; then the flag meanings (light on) from the object's state
   component handler (FUN_003529F0 virtual).
+
+## 47. The "flags" field, sequences (Ghost speaks), cinematics (2026-10-11 15:00-16:00, run SEQ1)
+- Field kind 0x22 is NOT a flags bitset: FUN_010695C0 encodes a TYPED body {u32 type tag @+0,
+  body @+0x10}: the tag through schema *[0x197DEB0] (BSS 0x28C2380 = 0x80800046, a 4-byte
+  tag-ref struct; static record 0x13C4078 has its descriptor at +0x08), then the body with that
+  tag. The oracle could not encode it: the BSS tag was unseeded and 0x80800046 was outside the
+  registry closure (the walker ran on code bytes, kind 0xC8). Fixed in d1-oracle
+  (runtime_ids::seed + registry::build extra roots, D1_ORACLE_EXTRA_TAGS for body schemas):
+  kind-4 values with mode 1 now encode (86-byte frame). Scripted-object state bodies: still to
+  identify (objects with a +0x98 state definition, class 0x808005eb, list component classes
+  0x808028ef / 0x808006f9 / 0x8080279b ...).
+- KIND 5 = SEQUENCES (setter FUN_0040BE80, value 0x808029a1 32 B {i32 start, u8 counter, ...,
+  name ref}; default {-1, 0xFF}). Names: seq_d_o1_10 ... (Ghost dialogue per objective),
+  seq_m_cue1/2 (music), seq_fallen_*, seq_ambush_*, seq_drone_*, objective
+  _incoming/_completion_sequence (empty: def+0x68 = -1). A changed counter plays it:
+  injecting {start 0, counter 1} into 3c2f5ed5 sub 3 (seq_d_o1_10) put the GHOST speaker
+  indicator on the HUD (overnight\seq-sheet.png). Zero pokes.
+- KIND 6 = CINEMATICS (value 0x8080254d: +4 play id, +8 play, +9 ?, +0x14 player (-1 = any),
+  lists of participant ids). Only one is in the Wall: 992bb471 sub 10 = pf_104a_pwr (the
+  POWER cinematic - the lights). The value applies and FUN_004027A0 runs, but FUN_004E2F50
+  finds no cinematic with that hash: [[0x2697280]+0x1350] (registered cinematics) = 0.
+  Registration = FUN_004E28F0(id), called from a method of record class 0x8080228f
+  (binding 0x1982140, registered in FUN_00BF2B00) with the id at object+0x2C.
+- Kind 32 = player objectives (obj_investigate_wall, obj_get_weapon, ...), kind 29 = player
+  triggers, kind 28 pm_*, kind 30 tg_m0_gating, kind 24/33 ghost light.
