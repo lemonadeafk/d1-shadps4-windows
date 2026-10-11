@@ -578,3 +578,15 @@ Vendors:
   subclass screen uses it. So the in-world ability set is NOT assembled from the subclass item's
   grid/node states at load; setting nodes will not restore sprint. Source of the player's ability
   set (and of Stormtrance) still unknown.
+
+## 31. Action types (01:30) - run 20261011-011316-WIN-ACTCAP
+- FUN_003B5740(type) = action type -> class, table 0x191D880 (u64 per type, pointing at
+  typeinfo+0x18). Full list recovered (scratchpad acttab/rtti), e.g. 4-10 sequence/radiance/blink
+  supers, 13-15 grenade, 16 void_bow, 17 ward_of_dawn, 18 slam, 24-25 evade/dodge, 57-61 melee,
+  63 jetpack, 64 double_jump, 65 glide, 66 SPRINT, 73 jump, 80-83 locomotion.
+- Logged every lookup from Tower load to in_world (44,675): only 2 resurrect, 53/54 weapon
+  switch/ready, 80/82/83 locomotion. Idle vs pressing L3 (uncharged super): identical sets.
+  Sprint (66) is never requested.
+- So input L3 is not routed to the sprint action at all. Next: the player's input -> action
+  binding, probably biped/class content selected by identity, or a character/profile field that
+  picks the ability set. Look at who calls 0x3B5740 with a computed type (callers 0x36BE00..).
