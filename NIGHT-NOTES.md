@@ -669,3 +669,30 @@ all intermediate shots in shadgames\overnight\.
   phase, mission script, touchpad state (touchpad toggles the Nav Mode text only).
   Action lookups in the mission: only 80 (player locomotion) and 84 (floating_locomotion = the
   Ghost). One type-8 object is parented to the biped (def 0x80aae367, ps4_globals).
+
+## 35. Subclass nodes decoded and served (05:20)
+- Talent grid table: investment-globals root [0x2639AF8] +0x468 = table tag; resolve(tag)+8 =
+  {i32 count (1285), +8 self-rel}, entries at T+0x18+[T+8], stride 0x18, +0x10 = grid def tag.
+  Grid def G: +0x10 node count, nodes at G+0x18+[G+0x18]+0x10, stride 0x40: +0x00 node hash,
+  +0x18 step count, +0x20 self-rel steps (0x90 each), +0x38 exclusive-set hash (FNV-1;
+  0x811C9DC5 = none), +0x3C flags. (scratchpad griddef.py reads it live.)
+- Bladedancer (grid 130, def 0x80a6467c): 30 nodes x 1 step. Sets: {0} {1,15,16} {2,11,22}
+  {3,17,18} {4,5,6} {7,8,9} {10} {13,14,21} {19} {23,28,29} {24,26,27}; set-less (flag 1):
+  12, 20, 25.
+- Node state byte (item element +0x5A+i) = steps bought (0 = off). FUN_00285E00 evaluates a
+  node against its set partner (FUN_00284970) and indexes steps[state-1]: an inconsistent set
+  walks off the array -> the crashes seen with "node 0 only" and "all 36 on" (0xc0000005 at
+  eboot 0x286194).
+- VALID SET = one node per exclusive set + the set-less ones:
+  `d1-oracle inventory rebuild --dir capture-rig/inventory-hunter-full
+     --subclass-nodes 0,1,2,3,4,7,10,12,13,19,20,23,24,25`
+  Served result: subclass tooltip shows Armor/Agility bars, the grid shows the active nodes
+  (Desktop\bladedancer-nodes-active.png). No crash.
+- hwwatch leftover breakpoints AGAIN: an exec bp left on 0x269180 killed the game
+  (0x80000004) the moment the subclass screen was dismissed - that function runs there. This is
+  also the likely cause of the earlier "circle on the subclass screen crashes".
+- Gear caches (init 0x63DF20; registry header +0x28 = count): player gear [0x26A5DE8] = 6,
+  WEAPON gear [0x26A5DF0] = 3, ship [0x26A5DF8] = 1, ghost [0x26A5E00] = 0, vehicle
+  [0x26A5E08] = 0. So the three weapons ARE loaded as gear; they are just not in hand.
+- In-world after all of this (Moon): still the Ghost in the open hand
+  (Desktop\moon-ghost-in-hand.png), jump works (z +1.39), no double jump measured, no firing.
