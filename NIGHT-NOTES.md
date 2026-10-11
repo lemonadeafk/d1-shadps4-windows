@@ -863,3 +863,6 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
 - Not yet seen on screen (dark); not yet tested: walking in from the start bubble 14 (the
   client did start a `normal_z_leg` transition to PRV112.1 on its own here), whether enemies
   react to gunfire, damage, kills.
+- USER-VERIFIED (13:50): walked to a Dreg inside the Wall and shot it - it died. A nearby Dreg
+  behind a broken window was trying to melee/shoot. So enemy AI, damage and death all work;
+  what is missing is the mission's direction (lights, squad wake-up, objectives, phases).
