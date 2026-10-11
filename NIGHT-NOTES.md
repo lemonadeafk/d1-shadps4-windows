@@ -751,9 +751,9 @@ all intermediate shots in shadgames\overnight\.
   firing" problem, and it is the next thing to solve (leads in section 36).
 
 ## 40. Weapons, day 2 (2026-10-11 11:00-12:10) - CORRECTION to section 36/39
-AKnumbers' hint: "you're not a complete biped. there are an asinine amount of steps on spawn in.
-are you truly handling all of them? in order, in time, and correctly? did you truly remove all the
-memory pokes/hooks/etc?" Pokes: none at runtime; boot XML patches = heartbeat workaround, two
+A hint from the d1preservation side (paraphrased): the spawned biped is not complete - the
+spawn-in has many steps that must all be handled, in order, in time and correctly, with no pokes
+or hooks left. Pokes: none at runtime; boot XML patches = heartbeat workaround, two
 log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
 - Ruled out by experiment (each read back): lifetime phases served IN ORDER 1 -> 2 -> 3 (AH held
   at D1_AH_SENSOR_PHASE=1, later phases injected; spawn happens at 3, still unarmed);
