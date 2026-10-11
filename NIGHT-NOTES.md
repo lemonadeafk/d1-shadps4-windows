@@ -496,3 +496,13 @@ Vendors:
 - hwwatch is unsafe while the user plays: breakpoints survived detach twice (0x80000004 crashes
   on the subclass screen). No debugger attaches during a play session.
 - Later: derive the index from the client's BAP 6 startup request instead of a launcher constant.
+
+## 26. VENDORS WORK (23:35) - run 20261010-232301-WIN-ACT1, user-verified
+- First session with activity index 1 (the Tower's own activity) instead of 407 (Elimination).
+  Vendor menus open. Most likely cause: the activity (social space). Not fully separated from the
+  geared character + inventory, which started being served two runs earlier with no vendor test in
+  between. Discriminator if ever needed: geared set + D1_AH_ACTIVITY_INDEX=407.
+- So the performance-sensor and sense-message hunts (sections 22-23) were chasing a symptom of the
+  wrong activity. Supers still fire on L3 and there is still no sprint on activity 1.
+- Keyboard: shadPS4 input_config\default.ini now also has l3 = lshift, l1 = f, r1 = f
+  (backup default.ini.bak-before-shift-f).
