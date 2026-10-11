@@ -590,3 +590,9 @@ Vendors:
 - So input L3 is not routed to the sprint action at all. Next: the player's input -> action
   binding, probably biped/class content selected by identity, or a character/profile field that
   picks the ability set. Look at who calls 0x3B5740 with a computed type (callers 0x36BE00..).
+- (01:40, run 20261011-012826-WIN-ACTLIST) The 16 callers of FUN_003B5740 all read the type from a
+  byte of an EXISTING action record (dispatchers, not creation). The player's record (type 80,
+  physics_driven_locomotion) sits in a 7-slot per-actor action table (array of 7 x {.., .., u8
+  type, ..}, element 0x808027F2): slot 0 = 80, slots 1-6 = 0xFF. NPCs use 82. Sprint would be
+  STARTED by the locomotion action's update (type 80 class c_action_impl_physics_driven_locomotion,
+  vtable via table entry 80) on L3 - that start condition is the next thing to read.
