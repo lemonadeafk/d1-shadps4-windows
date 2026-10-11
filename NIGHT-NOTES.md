@@ -941,3 +941,10 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   (binding 0x1982140, registered in FUN_00BF2B00) with the id at object+0x2C.
 - Kind 32 = player objectives (obj_investigate_wall, obj_get_weapon, ...), kind 29 = player
   triggers, kind 28 pm_*, kind 30 tg_m0_gating, kind 24/33 ghost light.
+- Registration trace (runs CINE1/CINE2, exec bp on FUN_004E28F0): 28 registrations during the
+  boot -> orbit -> launch path, from object creation (0x32D51E -> 0x30D630 -> 0x30E64F ->
+  FUN_004E6C50, a vtable method of an RTTI-less cinematic object type, vtable ~0x1981CB8, whose
+  sibling FUN_004E6570 unregisters). In-world the list is empty again in both the Wall and the
+  start bubble: the mission's own cinematic objects (pf_104a_pwr) are never created. NEXT: what
+  creates them - a host-spawned simulation object (like squad actors) named by the kind-6
+  value's participant lists (kind-0x23 ids), or a phase/precache record.
