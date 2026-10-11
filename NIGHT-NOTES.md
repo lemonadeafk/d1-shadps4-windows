@@ -749,3 +749,35 @@ all intermediate shots in shadgames\overnight\.
   objects can be created in our worlds - from an NPC's definition - but the player's loadout
   is never applied to its biped. That is the whole "Ghost in hand / orb / no sprint / no
   firing" problem, and it is the next thing to solve (leads in section 36).
+
+## 40. Weapons, day 2 (2026-10-11 11:00-12:10) - CORRECTION to section 36/39
+AKnumbers' hint: "you're not a complete biped. there are an asinine amount of steps on spawn in.
+are you truly handling all of them? in order, in time, and correctly? did you truly remove all the
+memory pokes/hooks/etc?" Pokes: none at runtime; boot XML patches = heartbeat workaround, two
+log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
+- Ruled out by experiment (each read back): lifetime phases served IN ORDER 1 -> 2 -> 3 (AH held
+  at D1_AH_SENSOR_PHASE=1, later phases injected; spawn happens at 3, still unarmed);
+  udt 2 world_globals_state (now encodable: descriptor *0x1902388, schema 0x80800dc1 =
+  {bool, float}, applier FUN_002A2270 -> world_globals+0x14, received byte +0x10) sent before
+  spawn - no change; the inject dir now takes `<name>.udtN` (struct image) for any AH message.
+- Lifetime setter 0x11DE30 notifies on change: vtbl+0xD0(old,new) for the phase, vtbl+0xC8 when
+  value+4 (u32, we send NONE) changes, vtbl+0xF0 with value+2.
+- Object creation: FUN_0032D180 (79 callers). Player spawn = FUN_00411830; spawn-point search
+  via 0x4141A0; biped at 0x412D18; an optional pre-object at 0x412BDF.
+- THE PLAYER'S WEAPONS DO EXIST. FUN_006676B0 (per unit, slots 0..2) reads the player's weapon
+  descriptions and creates one object per slot through FUN_00666130 - a GENERIC object (fixed
+  descriptor globals 0x1902DA8/0x1902D88, parent = unit), i.e. sobject type 8/24, not type 11
+  (type 11 = tag-defined NPC weapons). unit+0x1E8.. = 3 x {handle, n, 0x10d2}. So "no weapon
+  objects" (sections 36/39) was a wrong reading of the type census.
+- Player record (players[i], stride 0x2AF0, [0x2725700]+8): +0x1660 character representation
+  (tag, hash, 3 floats = level; 5 armour entries at +0x17E0), weapon descriptions at +0x19C8 /
+  +0x1CE8 / +0x2008 (stride 0x320): +0 tag (0x80a7e218 for ALL three), +0xC / +0x10 hashes =
+  UNSET (0x811C9DC5), +0x18 item SOID, +0x20 gear count, +0x24.. gear model tags (these match
+  the weapon gear cache). 0x80a7e218 is a value in the live {tag, hash} asset table (10053
+  entries at 0x382fb2404, sorted by hash) under many keys - a shared asset, probably fine.
+- "Weapons disabled" switch in 0x6676B0: object named hash [0x25BE630] = 0xe0f3e461 via
+  FUN_00118860, bool at +8 -> strips weapons. On our runs the lookup returns NULL (= not
+  disabled).
+- OPEN: why the three weapon objects stay inactive (first person = open hand + Ghost). Suspects:
+  the two unset hashes at desc+0xC/+0x10 (0x668100 is handed desc+0xC), and the per-equipment
+  fields the peer view leaves empty (0x8080183C +0x0A u16, +0x20 {hash,u32}, +0x28 list).
