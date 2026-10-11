@@ -718,3 +718,10 @@ all intermediate shots in shadgames\overnight\.
   slot value arrays we leave empty: +0x10 {u3 count, 4 x {hash, float}} and +0x4C {u4 count,
   8 x hash} (schema 0x808022A5) - 4 and 8 are suspiciously "abilities" and "gear" shaped, and
   the AH is the authority for that value.
+
+## 37. Return to orbit and relaunch - WORKS (05:50, run 20261011-045928-WIN-ORBITBACK)
+- In "A Guardian Rises": touchpad (Nav Mode) -> hold triangle "Go to Orbit" ->
+  `cleanup (return_fireteam_to_orbit)` -> `setup:orbit_loading` -> `setup:orbit`. No crash.
+- From that orbit, Director -> Earth -> Patrol -> Launch again -> `activity:in_world`, biped
+  spawned again (team -1/-1, ready flag set). The activity host serves a second instance in the
+  same session with no restart.
