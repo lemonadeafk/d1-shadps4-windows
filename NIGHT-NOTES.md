@@ -416,3 +416,21 @@ Vendors:
   packages ("approach" only matches an enemy animation list, entry 3309 of the ambient package).
   Next: dig the per-NPC performance table out of the running game (inside FUN_00137920's lookup)
   and reverse the hashes, or find the script that sets them.
+
+## 22. Vendor trace: the valid performance hashes (21:10)
+- Per-actor update FUN_0013B460: sensor value {hash A @+0, hash B @+4, sequence @+8}; if A is set
+  and sequence > actor+0xABC, FUN_00150900 looks A up in the actor DEFINITION and FUN_00BDAC20
+  plays it (B is passed along); then actor+0xABC = sequence.
+- Lookup table (FUN_00150900): definition D = resolve(actor+0x1C); count [D+0x38]; entries at
+  D+0x40+[D+0x40], stride 0x20, type key at +0x1C (must equal *[0x25BEBD0] = 0xAFB11A12), then
+  count at +0x20 and a relative pointer at +0x28 to u32 name hashes (+0x10).
+- Every plaza NPC definition (class 0x808013F3, e.g. tag 0x80C889CC) carries the same 71 hashes
+  under that key - dumped to capture\tower-plaza-performance-hashes.json. The definition names
+  three sequence files: vendors\sequences\{vendor_mode, ledge_sit_mode,
+  rail_lean_backwards_mode}.sequence.tft.
+- The names do NOT reverse: not in the eboot corpus, and no match against 352,873 strings from
+  the two Tower activity packages (whole strings or any token sub-sequence, FNV-1, either case).
+  Several hashes differ only in the low byte by '1'/'2'/'3' (numbered variants).
+- Not established: that a performance is what the "Approach" prompt / vendor menu waits for.
+- Next: a way to inject a udt-5 frame into a running session, then try performances one at a
+  time on Rahool's sensor and watch the prompt.
