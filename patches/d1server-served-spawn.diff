@@ -1017,6 +1017,25 @@ index 0000000..8366cd9
 +        println!("{:#010x} {} {} {}  # {:#010x}", s.name_hash, s.kind, s.sub, u8::from(s.part2_tag.is_some()), s.value_tag);
 +    }
 +}
+diff --git a/d1-server/crates/d1-oracle/src/character.rs b/d1-server/crates/d1-oracle/src/character.rs
+index 3ba6f83..a1a63f3 100644
+--- a/d1-server/crates/d1-oracle/src/character.rs
++++ b/d1-server/crates/d1-oracle/src/character.rs
+@@ -1547,11 +1547,10 @@ pub fn equipment_from_inventory_with(
+         if let Some((t, _)) = art {
+             match t.equip_slot_for(content_index) {
+                 Some(s) if s < EQUIPMENT_SLOTS => {
++                    // The FIRST staged item of an ordinal is the equipped one; later ones are
++                    // spares that live in family 4/3 and the backpack only.
+                     if out[s] != EquipSlot::EMPTY {
+-                        return Err(OracleError::Shape(format!(
+-                            "two staged items claim equipped ordinal {s} (content indices {} and \
+-                             {content_index}) - the consumer 0x269080 can only see one of them",
+-                            out[s].content_index)));
++                        continue;
+                     }
+                     if s == EMBLEM_SLOT {
+                         return Err(OracleError::Shape(format!(
 diff --git a/d1-server/crates/d1-oracle/src/inventory.rs b/d1-server/crates/d1-oracle/src/inventory.rs
 index c219d4f..e850f10 100644
 --- a/d1-server/crates/d1-oracle/src/inventory.rs
@@ -1106,7 +1125,7 @@ index e571644..214bed7 100644
  
  pub use activity_host::{AhCodec, AhSchema};
 diff --git a/d1-server/crates/d1-oracle/src/main.rs b/d1-server/crates/d1-oracle/src/main.rs
-index 407b1a9..270db00 100644
+index 407b1a9..8e5dfa4 100644
 --- a/d1-server/crates/d1-oracle/src/main.rs
 +++ b/d1-server/crates/d1-oracle/src/main.rs
 @@ -520,7 +520,21 @@ enum InventoryCmd {
@@ -1142,7 +1161,26 @@ index 407b1a9..270db00 100644
              };
              let payload = m.encode()?;
              println!(
-@@ -1983,7 +2000,7 @@ fn run_inventory(cli: &Cli, cmd: &InventoryCmd) -> anyhow::Result<ExitCode> {
+@@ -1096,12 +1113,14 @@ fn run_profile(cli: &Cli, cmd: &ProfileCmd) -> anyhow::Result<ExitCode> {
+                             (ci != profile::EMPTY_INDEX).then(|| t.equip_slot_for(ci)).flatten()
+                         }) {
+                             Some(s) if s < d1_oracle::profile::EQUIPPED_SLOTS => {
++                                // The FIRST staged item of an ordinal is the equipped one;
++                                // later ones are spares: family 4/3 + a backpack slot only (the
++                                // consumer 0x269080 can only see one per ordinal).
+                                 if eq[s] != 0 {
+-                                    anyhow::bail!(
+-                                        "two staged items claim equipped ordinal {s} - 0x269080 \
+-                                         can only see one of them");
++                                    eprintln!("  spare: content index {ci} stays in the backpack (ordinal {s} is already equipped)");
++                                } else {
++                                    eq[s] = it.soid;
+                                 }
+-                                eq[s] = it.soid;
+                             }
+                             Some(s) => anyhow::bail!("equipped ordinal {s} is out of range"),
+                             None if art.is_some() => {
+@@ -1983,7 +2002,7 @@ fn run_inventory(cli: &Cli, cmd: &InventoryCmd) -> anyhow::Result<ExitCode> {
              Ok(if ok { ExitCode::SUCCESS } else { ExitCode::from(2) })
          }
  
@@ -1151,7 +1189,7 @@ index 407b1a9..270db00 100644
              let table = d1_oracle::item_index::IndexTable::load_default()?;
              // The art table also carries the def-derived +0x20 curve offset and the def+0x68 stat
              // list (both what the client's own constructor FUN_0026E0E0 would write). Optional:
-@@ -2003,6 +2020,9 @@ fn run_inventory(cli: &Cli, cmd: &InventoryCmd) -> anyhow::Result<ExitCode> {
+@@ -2003,6 +2022,9 @@ fn run_inventory(cli: &Cli, cmd: &InventoryCmd) -> anyhow::Result<ExitCode> {
              }
              let dst = out_dir.clone().unwrap_or_else(|| dir.clone());
              let mut oracle = ObjectOracle::new(inv::TAG)?;
@@ -1161,7 +1199,7 @@ index 407b1a9..270db00 100644
              let mut wrote = 0usize;
              let mut placements: Vec<(String, u64, u16, Option<u16>)> = Vec::new();
  
-@@ -2032,6 +2052,22 @@ fn run_inventory(cli: &Cli, cmd: &InventoryCmd) -> anyhow::Result<ExitCode> {
+@@ -2032,6 +2054,22 @@ fn run_inventory(cli: &Cli, cmd: &InventoryCmd) -> anyhow::Result<ExitCode> {
                      let mut sp = inv::ItemSpec::resolved(s.soid, hash, &s.bucket, &table)?;
                      sp.level = *level;
                      sp.equip_min_stat = *equip_min;
@@ -1184,7 +1222,7 @@ index 407b1a9..270db00 100644
                      if let Some(a) = art.as_ref() {
                          // ⭐ +0x20 and +0x88/+0x98, as FUN_0026E0E0 itself would set them.
                          // `None` = the table never measured this item: leave the default alone.
-@@ -2048,9 +2084,10 @@ fn run_inventory(cli: &Cli, cmd: &InventoryCmd) -> anyhow::Result<ExitCode> {
+@@ -2048,9 +2086,10 @@ fn run_inventory(cli: &Cli, cmd: &InventoryCmd) -> anyhow::Result<ExitCode> {
                  let slot = inv::slot_for_bucket(&spec.bucket, 0);
                  println!(
                      "  {:20} soid {:#018x}  hash {:#010x} -> content index {:<5}  \

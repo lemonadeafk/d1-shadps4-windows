@@ -725,3 +725,17 @@ all intermediate shots in shadgames\overnight\.
 - From that orbit, Director -> Earth -> Patrol -> Launch again -> `activity:in_world`, biped
   spawned again (team -1/-1, ready flag set). The activity host serves a second instance in the
   same session with no restart.
+
+## 38. Spare items and equipping (06:15, run 20261011-050821-WIN-EQUIP)
+- A spare item = one more element file in the inventory dir (key = base SOID + file index, so
+  `13-Primary Weapons.bin` must carry SOID ...030E). Staged as a legacy element (+0x18 item
+  hash, see d1-responder stage_loadout) then `inventory rebuild` + `art-arrangement write` +
+  rebuild. character/profile builders now treat the FIRST item of an equipped ordinal as
+  equipped and later ones as backpack spares (profile slot = bucket first slot + n).
+- Result: Fatebringer shows in the PRIMARY WEAPONS panel next to the equipped Last Word
+  (Desktop\inventory-spare-fatebringer.png).
+- Pressing X on it sends investment 403 inventory_equip_item; the responder's composite reply
+  (5 B: 1800000000) is accepted - no BAP drop, no crash (the old 2-byte reply dropped BAP).
+  The screen does NOT swap: the real server follows with updated objects (profile 4/1
+  equipment list, character 3/1, peer view 0/1). NEXT: on 403, decode the item SOID
+  (request schema 0x80801942, one u64), swap it into the equipment list, re-push those objects.
