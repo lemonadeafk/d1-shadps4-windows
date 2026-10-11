@@ -62,6 +62,16 @@ DESTINATIONS = {
         env=["D1_AH_SENSOR_WORLD=0x80cb800d:3", "D1_AH_ACTIVITY_INDEX=165",
              "D1_AH_SENSOR_PLAYER_TEAM=-1"],
         launch="launch_patrol.py"),
+    # ... and with the area's scripted objects (kind 4: lights, doors, grates, tripwires, chest)
+    # told to exist, the way squad members are (NIGHT-NOTES section 45).
+    "guardian_rises_b3_objects": dict(
+        args=["--inworld", "--world", "act_cosmo_m0_highway", "--checksum", "0x8fe07299",
+              "--bubbles", "22", "--chosen", "0-21"],
+        env=["D1_AH_SENSOR_WORLD=0x80cb800d:3", "D1_AH_ACTIVITY_INDEX=165",
+             "D1_AH_SENSOR_PLAYER_TEAM=-1",
+             "D1_AH_SENSOR_KIND_VALUE=2:0x80800868:" + os.path.join(ROOT, "capture", "values", "member_exists.bin")
+             + ",4:0x808007d9:" + os.path.join(ROOT, "capture", "values", "object_exists.bin")],
+        launch="launch_patrol.py"),
     "guardian_rises_b12": dict(
         args=["--inworld", "--world", "act_cosmo_m0_highway", "--checksum", "0x8fe07299",
               "--bubbles", "22", "--chosen", "0-21"],

@@ -866,3 +866,23 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
 - USER-VERIFIED (13:50): walked to a Dreg inside the Wall and shot it - it died. A nearby Dreg
   behind a broken window was trying to melee/shoot. So enemy AI, damage and death all work;
   what is missing is the mission's direction (lights, squad wake-up, objectives, phases).
+
+## 45. Scripted objects (kind 4) - why the Wall is dark (2026-10-11 14:40)
+- Record names are in the content (D1_WS_DUMP=<dir> on the world_sensors example writes every
+  record entry; the name strings are at the end). Bubble 3 kind 4, subs 0-19: o_breach_control,
+  o_breach_doors_lights, o_breach_doors_exit, o_breach_cables, o_breach_gating_lights
+  ("m0_power_up"), o_breach_gating_back, o_breach_nut_back, o_chest_primary_weapon,
+  o_device_invis_light ("breach_light_fall"), o_floor_grate_1a/1b/2a/2b, o_fallen_tripwire_1-7.
+  Others: kind 1 sq_fallen_*, kind 3 obj_breach_fallen01, kind 6 *_cinematic, kind 24
+  ho_ghostlight, kind 28 pm_* , kind 30 tg_m0_gating, kind 33 of_ghostlight, kind 40 actors
+  (nux_ghost, dropper1, crawler1-8, runner1-4, shank1-2).
+- Setter -> schema map for all 40 replication setters: each starts `lea rax,[g]; mov rax,[rax];
+  mov esi,[rax]` = the value tag. Kind 4 (0x808007D9, 0xF0 B) = FUN_001238D0; kind 5 0x40BE80,
+  6 0x402550, 12 0x408740, 15 0x11DAC0, 16 0x11DE30, 17 0x11EF80, 24 0x122C60, 28 0x129EE0,
+  29 0x12A780, 30 0x12C900, 33 0x126C10, 34 0x10BC20, 39 0x406E20, 40 0x128B30.
+- Kind-4 live record: value image at rec+0x1B0 (default {0, -1, bool 0, null name ref, ...}),
+  object handle at rec+0x390 = -1 on all 21 loaded records: NO scripted object exists (read in
+  the user's live session, no writes). FUN_001238D0: with rec+0xA4 == 0, value+8 (bool) set and
+  no object -> FUN_00124A10 + FUN_00124DF0 create it; value+0 is a sequence number (rec+0x2A0).
+- Next run: `autopilot.py --director --destination guardian_rises_b3_objects` serves
+  capture\values\object_exists.bin (default image with +8 = 1) to every kind-4 slot.
