@@ -268,6 +268,28 @@ def main():
                     handles[ev.dwThreadId] = h
                     set_dr(h, 0, a.len, rw)
             k32.ContinueDebugEvent(ev.dwProcessId, ev.dwThreadId, st)
+        # Verify before letting go (2026-10-10: a breakpoint survived detach on one thread and
+        # killed the game when the subclass screen later ran that code). Check EVERY thread of the
+        # process, not only the ones we remember arming, and retry until Dr7 reads clean.
+        for attempt in range(5):
+            dirty = []
+            for tid in threads_of(pid):
+                h = handles.get(tid) or k32.OpenThread(THREAD_ALL, False, tid)
+                if not h:
+                    continue
+                handles[tid] = h
+                keep, ctx = aligned_context()
+                ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS
+                if k32.GetThreadContext(h, ctypes.byref(ctx)) and (ctx.Dr7 & 0xFF or ctx.Dr0):
+                    k32.SuspendThread(h)
+                    set_dr(h, 0, a.len, rw)
+                    k32.ResumeThread(h)
+                    dirty.append(tid)
+            if not dirty:
+                break
+            print(f"== detach: cleared a leftover breakpoint on {len(dirty)} thread(s), re-checking")
+        else:
+            print("== ⛔ detach: some thread still holds a breakpoint - the game may crash if it runs that code")
         k32.DebugActiveProcessStop(pid)
     return split, regs
 
