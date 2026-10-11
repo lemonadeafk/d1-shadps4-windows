@@ -830,3 +830,19 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   0x90F440 -> rep+0x320, 0x90E560 / 0x90E6F0 / 0x90EA60 -> rep+0x324 / +0x330 / +0x358,
   fed by the appearance block's 5 x {u8, 16 hashes} (+0x10) and 32 hashes (+0x164) that we
   serve as zeros.
+
+## 43. ABILITIES WORK (2026-10-11 13:10) - Desktop\FULL-HUD-*.png, GRENADE-thrown.png
+- Appearance block +0x10: 5 x {u8 row, 16 x u32 option hash} (68 B each), +0x768: 32 x u16
+  perk indices. FUN_0090E000 resolves row in the ability table (root +0x340 -> 38 rows x
+  0x28, key hash -> bundle), then applies the 16 hashes and the block's 32 hashes
+  (FUN_0061F620). Zeros = row 0 in all five slots (what every build shipped: no sprint, no
+  grenade/melee, "lightning on L3"). 0xFF in all five asserts at spawn (0xc0000096 @0xC66BA6).
+- The values are in the subclass TALENT GRID definition: each node record holds 0x808018E8
+  elements {u32 option hash, u8 target row @+4, u8 ability row @+0xB, u32 slot @+0xC} and a
+  0x80804628 list of u16 perk indices (0x80801787 = stat modifiers). For the active node set:
+  Bladedancer slots [26, 12, 8, 3, 13]; options row 12: 9d0fa163 d2b26ec9; row 8: 62239b90
+  d2b26ec9 d4d0f628; perks 208 88 89 84 76 77 78 79. (scratchpad grid3.py)
+- tools\finish_character.py writes them (character + peer view) with the weapon patterns.
+- Measured on the Moon map, zero pokes: HUD shows grenade + melee icons, super bar, 3 weapons;
+  grenade throws (arc grenade, icon goes on cooldown); double jump 3.8 vs 1.0; sprint 8.3 u/s
+  with L3 HELD (walk 5.6; a quick L3 click did not latch in my input timing).
