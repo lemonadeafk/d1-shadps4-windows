@@ -696,3 +696,25 @@ all intermediate shots in shadgames\overnight\.
   [0x26A5E08] = 0. So the three weapons ARE loaded as gear; they are just not in hand.
 - In-world after all of this (Moon): still the Ghost in the open hand
   (Desktop\moon-ghost-in-hand.png), jump works (z +1.39), no double jump measured, no firing.
+
+## 36. Why the Ghost is in hand: there are NO weapon objects (05:35)
+- Object type table (d1preservation design/player-in-world.md): 8 interactive, 9 biped,
+  11 WEAPON, 12 vehicle, 19 gear, 21/22/23 hop_on_gear_{biped,weapon,ship}, 24 system.
+  Census in every world we reach (Tower, mission, Moon): types {1,2,3,4,8,9,12,14,24} only -
+  not one type-11 weapon, no gear, no hop_on_gear. The biped's children (linked at +0x44/+0x48,
+  first child at biped+0x4C) are 2 x interactive + 1 x system (def 0x80ad27b2, ids 11/23/18)
+  and one interactive (def 0x80aae367).
+- So weapon_switch/weapon_ready (actions 53/54) run at spawn with nothing to ready, the
+  first-person view falls back to the open hand + Ghost, fire/sprint/L1+R1 do nothing, and in
+  third person (Tower) it is the "orb". d1preservation records the same symptom as open
+  ("The Ghost persists and won't dismiss", GUARDIAN-IN-WORLD.md).
+- Ruled out as the cause, each by serving it and reading it back: weapon-slot unlock flags
+  (2501-2503), item talent grids, subclass node set, lifetime phase, team, touchpad state,
+  mission scripting (same on the Moon). The weapon GEAR cache has 3 entries, the client never
+  sends allocate_entity_indices (udt 19) and frees most of its entity indices (udt 20).
+- Next leads, in order: (1) c_investment_equip_inventory_item_component (RTTI) - what applies
+  an equipped item to the unit and what it waits for; (2) s_player_resurrection_payload - what
+  the spawn carries (c_simulation_queue_player_resurrection_definition); (3) the kind-12 player
+  slot value arrays we leave empty: +0x10 {u3 count, 4 x {hash, float}} and +0x4C {u4 count,
+  8 x hash} (schema 0x808022A5) - 4 and 8 are suspiciously "abilities" and "gear" shaped, and
+  the AH is the authority for that value.
