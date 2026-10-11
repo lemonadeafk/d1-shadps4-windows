@@ -481,3 +481,18 @@ Vendors:
 - Lesson: verify the data ARRIVED (read it back from the guest) before judging its effect.
 - Rebuilding the whole inventory on this PC drops helmet fields (no art-arrangement table here);
   only 00-Subclass.bin was replaced. Backup: capture-rig\inventory.bak-no-grid.
+
+## 25. FOUNDATION FIX: the Tower was running as ELIMINATION (23:25)
+- The host published activity INDEX 407 (its default, kept from the first pvp_moonbase runs).
+  activity-modes.tsv: 407 = 0x6D714C3A "Elimination" (3v3 Crucible). The client itself requests
+  `activity HASH(0xdf283afb) (activity_index=1)` when the Tower is launched (activity_manager line
+  in guest-stdout). Row 1 = 0xDF283AFB. Row 0 = 0x8AE8DA69 "Tower" (unmet prerequisites).
+- d1_launch.py --director now sets D1_AH_ACTIVITY_INDEX=1. Run 20261010-232301-WIN-ACT1 reaches
+  in_world, no team-mode warning.
+- Likely explains: super usable in the Tower; possibly the wrong super / no sprint / dead vendors
+  (social-space behaviour comes from the activity). To be re-tested on activity 1.
+- Process lesson (user's words): stop fixing step 10 while steps 1-9 are wrong. Check that the
+  inputs the server publishes match what the client asked for BEFORE chasing symptoms.
+- hwwatch is unsafe while the user plays: breakpoints survived detach twice (0x80000004 crashes
+  on the subclass screen). No debugger attaches during a play session.
+- Later: derive the index from the client's BAP 6 startup request instead of a launcher constant.

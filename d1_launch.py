@@ -412,7 +412,13 @@ def session(args):
             "D1_PUSH_AT": "echo",
             "D1_PUSH_FAMILY": "4,3",
             "D1_CHARACTER_LIFECYCLE": "1",
-            "D1_PROFILE_FILE": str(REPO / "capture-rig" / "profiles" / "profile-old-russia.bin"),
+            # The GEARED set: character + profile + inventory go together. The profile's 340-slot
+            # array names the 13 inventory items and the character file carries level/light/gear;
+            # with run-boot.sh's default (profile-old-russia, no character file) the Guardian is
+            # "identity-only". Verified 2026-10-10: level 40 / light 385 / armour in the character
+            # screen, and every Director destination unlocked.
+            "D1_PROFILE_FILE": str(REPO / "capture-rig" / "profiles" / "profile-geared-385.bin"),
+            "D1_CHARACTER_FILE": str(REPO / "capture-rig" / "characters" / "char-geared-385.bin"),
             # The responder serves the item inventory (family 4/3) ONLY when this is set - its
             # startup table shows the path as "[default]" either way. Without it the client has an
             # equipped list and no items behind it (found 2026-10-10: the subclass element was
@@ -444,6 +450,13 @@ def session(args):
                 # lifetime record {0x40aebf90, 0x10, 2}, and player slot sub 4 seated with our
                 # profile SOID. Repeated every 5 s for 2 min so one copy lands after the world is
                 # resident. NIGHT-NOTES section 14.
+                # The ACTIVITY the client asks for when the Tower is launched from the Director:
+                #   activity_manager: ... requesting activity host startup
+                #   [activity HASH(0xdf283afb) (activity_index=1 ...)]
+                # activity-modes.tsv row 1 = 0xDF283AFB. The host's default 407 is ELIMINATION
+                # (3v3 Crucible), a leftover of the first pvp_moonbase runs: published for the
+                # Tower it made the game run a PvP match on the Tower map (supers usable, etc.).
+                "D1_AH_ACTIVITY_INDEX": "1",
                 "D1_AH_SENSOR_PHASE": "3",
                 # The slot names are not measured any more: the activity host derives them from
                 # the world record's packages (d1_oracle::world_sensors; 100/100 agreement with
@@ -508,7 +521,7 @@ def session(args):
             if not wait_log(run / "activity-host.log", f"activity-host listening on {ip}:4110", timeout=30):
                 log(f"d1-activity-host did not report its listener - see {run / 'activity-host.log'}")
                 return 1
-            log(f"activity host up on 4110 (world {env.get('D1_AH_ACTIVITY', 'pvp_moonbase')}, activity 407)")
+            log(f"activity host up on 4110 (world {env.get('D1_AH_ACTIVITY', 'pvp_moonbase')}, activity {env.get('D1_AH_ACTIVITY_INDEX', '407')})")
         if not wait_port("127.0.0.1", 31313):
             log(f"shadnet-server did not come up on 127.0.0.1:31313 - see {run}")
             return 1
