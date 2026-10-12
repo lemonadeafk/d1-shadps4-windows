@@ -1114,3 +1114,13 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   ho_ghostlight {on, seq, ref -> fc0e45a3:33:124}: no crash; the flare went out and the shell is
   plainly visible. Earlier "invisible Ghost" = I was looking above it in a room that was black.
 - mission_director "wall" now spawns the Ghost first, the rest of the squads later.
+- 21:55 (run GH5): user's correction - the Ghost is not a companion; the player pulls it out with
+  the TOUCHPAD (keyboard: space). Tested: NAV MODE opens ("THE BREACH", UNABLE TO SUMMON, GO TO
+  ORBIT, No Tracked Items; Desktop\GHOST-nav-mode-touchpad.png) and toggles off again, but the
+  hand keeps the gun and no Ghost model appears, though a Ghost shell is equipped
+  (inventory-hunter-full\04-Ghost.bin). Same family as the weapon swap that does not work: what
+  the hand holds does not change. So ho_ghostlight ("held object") = the Ghost held as a torch in
+  the dark room; it needs the held-item switch to work first.
+- The squad Ghost (sub 95) spawns visible by the gate also with the lights on. Its one
+  performance (0x716A1D9B on nux_ghost, sub 125) sent while facing it: 6 frames over 8 s, no
+  movement. The actor's sequence (+0xABC) stayed 0 last time: the performance is not accepted.
