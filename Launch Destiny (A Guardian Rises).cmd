@@ -10,7 +10,13 @@ rem server follows you into that area and tools\mission_director.py plays the ro
 rem and its torch, the Ghost's lines, power up, the gate opens, the Fallen arrive.
 rem NIGHT-NOTES.md sections 54-58.
 cd /d "%~dp0"
+rem You start UNARMED and are handed the Khvostov when you reach the rifle: the login server
+rem pushes the changed loadout to the running game (tools\loadout_variant.py, section 63).
+set VARIANTS=C:\d1server\d1preservation\capture-rig\variants
+python "%~dp0tools\loadout_variant.py" unarmed --unarmed >nul
+python "%~dp0tools\loadout_variant.py" khvostov --primary 2799 --special none --heavy none >nul
+del "%~dp0inject\loadout-swap.txt" 2>nul
 start "mission director" /min python "%~dp0tools\mission_director.py" --script mission
-python "%~dp0d1_launch.py" --inworld --director --world act_cosmo_m0_highway --checksum 0x8fe07299 --bubbles 22 --chosen 0-21 --env D1_AH_SENSOR_WORLD=0x80cb800d:14 --env D1_AH_ACTIVITY_INDEX=165 --env D1_AH_SENSOR_PLAYER_TEAM=-1 --env "D1_AH_SENSOR_KIND_VALUE=2:0x80800868:%~dp0capture\values\member_exists.bin,4:0x808007d9:%~dp0capture\values\object_exists.bin" --env D1_AH_SENSOR_KIND_RESEQ=4 --env D1_AH_SENSOR_KIND_SKIP=2@3 --env D1_AH_SENSOR_FOLLOW_MAX=3 --env D1_AH_SENSOR_REPEAT_MAX=8 --name RISES %*
+python "%~dp0d1_launch.py" --inworld --director --world act_cosmo_m0_highway --checksum 0x8fe07299 --bubbles 22 --chosen 0-21 --env D1_AH_SENSOR_WORLD=0x80cb800d:14 --env D1_AH_ACTIVITY_INDEX=165 --env D1_AH_SENSOR_PLAYER_TEAM=-1 --env "D1_AH_SENSOR_KIND_VALUE=2:0x80800868:%~dp0capture\values\member_exists.bin,4:0x808007d9:%~dp0capture\values\object_exists.bin" --env D1_AH_SENSOR_KIND_RESEQ=4 --env D1_AH_SENSOR_KIND_SKIP=2@3 --env D1_AH_SENSOR_FOLLOW_MAX=3 --env D1_AH_SENSOR_REPEAT_MAX=8 --env "D1_ROSTER_DIR=%VARIANTS%\unarmed\roster" --env "D1_CHARACTER_FILE=%VARIANTS%\unarmed\char.bin" --env "D1_SWAP_TRIGGER=%~dp0inject\loadout-swap.txt" --name RISES %*
 echo.
 pause

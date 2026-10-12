@@ -1290,3 +1290,37 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   disappeared". The user heard "they're coming for us" repeatedly and expected a pickup prompt.
 - Open: the player is not GIVEN a Khvostov (already carries weapons); which o2 line is "I hope
   you know how to use that thing"; the other player triggers (pt_*) are still disabled.
+
+## 63. THE RIFLE IS HANDED OVER: live loadout push (2026-10-12 11:00, runs NOWPN1 / SWAP1 / HAND1)
+- USER (RIFLE3): saw FIGHT THROUGH THE WALL, the Fallen ran over; "I hope you know how to use
+  that thing" = seq_d_o2_90 (now played at the pickup). No prompt at the rifle.
+- ACTIVITY OPTIONS: global_activity_state +0x64 (count) / +0x68 (50 x 24 B) are NOT "launch
+  slots" but activity option overrides {name hash, type tag, value}; the client copies them to
+  its game options ([0x2724950]+8 +0x12FC) and FUN_00416B20 merges them into "Activity Options
+  Game State" (the table FUN_00118860 looks names up in; 45 entries for activity 165). They
+  encode once the type tag is registered (D1_ORACLE_EXTRA_TAGS=0x80800004 for bool) - the same
+  typed-body fix as section 47. Host: D1_AH_ACTIVITY_OPTIONS_FILE=<file of "hash tag value">.
+  `e0f3e461 80800004 1` = WEAPONS DISABLED (FUN_006676B0): the player spawns with no weapons and
+  no weapon HUD. But the options are only read when the activity starts - a later change reaches
+  the activity client (ac+0x50B0) and nothing re-reads it. Not used by the mission.
+- LIVE LOADOUT CHANGE WORKS. d1-responder D1_SWAP_TRIGGER=<file>: when the file appears (checked
+  on the client's keepalive echo) its NAME=value lines replace the content variables
+  (D1_ROSTER_DIR, D1_CHARACTER_FILE, ...), families 0 (peer view) and 3 (character) are rebuilt
+  by the baseline builders and sent as QueueZ DELTAS (version + 1 per push, flags 0). The client
+  accepts them and RE-EQUIPS THE LIVE PLAYER within a second or two: armed -> dead weapons ->
+  armed -> a different rifle, all in one session (SWAP1). This is also the missing half of the
+  character-screen equip (investment 403).
+- Equipment entry (character +0x250, peer view +0x218, 0x40 each, ordinal 6/7/8 = weapons):
+  {u64 SOID, u16 content index @+8, u16 pattern @+0x0A, u16 art index @+0x0C}.
+- Khvostov 7G-02 = content index 2799 (item hash 0xa5742ef6, pattern 5, art 1260): an auto
+  rifle with the red ammo counter, HUD 12 / 114 (Desktop\RIFLE-khvostov-handed-over-live.png).
+  ci 2090 (hash 0x52d74f29, pattern 28) is another primary - not tried.
+- tools\loadout_variant.py <name> [--primary CI] [--special CI|none] [--heavy CI|none]
+  [--unarmed] -> capture-rig\variants\<name>\{char.bin, roster\}. mission_director step
+  ("loadout", variant, name) writes inject\loadout-swap.txt. Both mission launchers now start
+  on the "unarmed" variant and push "khvostov" when the game reports the player at the rifle.
+- Verified HAND1 (fresh session): unarmed at spawn -> push -> Khvostov in hand. NOT yet run:
+  the whole chain with a player walking to the rifle (my walker cannot reach it).
+- Open: unarmed shows the open hand WITH the Ghost (pattern 0), probably not what the real
+  mission shows; 12-round magazine looks small (weapon stats are not served); the inventory
+  (family 4) still lists the old weapons.

@@ -564,7 +564,7 @@ index d6bf57f..55df4e9 100644
 +    })
 +}
 diff --git a/d1-server/crates/d1-activity-host/src/messages.rs b/d1-server/crates/d1-activity-host/src/messages.rs
-index 4e17610..1548c4d 100644
+index 4e17610..27f1d72 100644
 --- a/d1-server/crates/d1-activity-host/src/messages.rs
 +++ b/d1-server/crates/d1-activity-host/src/messages.rs
 @@ -403,6 +403,16 @@ impl GlobalActivityState {
@@ -584,7 +584,43 @@ index 4e17610..1548c4d 100644
      /// The activity checksum currently in the blob, for the run log and for controls.
      pub fn activity_checksum(&self) -> u32 {
          u32::from_le_bytes(
-@@ -744,6 +754,48 @@ impl ReplicateMembership {
+@@ -525,6 +535,22 @@ impl GlobalActivityState {
+         Ok(())
+     }
+ 
++    /// Activity option overrides: `(name hash, type tag, value)` per slot, e.g.
++    /// `(0xe0f3e461, 0x80800004 bool, 1)` = the option FUN_006676B0 reads to strip the player's
++    /// weapons. Replaces whatever the slots held; more than 50 are dropped.
++    pub fn set_options(&mut self, options: &[(u32, u32, u32)]) {
++        let n = options.len().min(Self::LAUNCH_SLOT_CAPACITY);
++        for (i, (hash, tag, value)) in options.iter().take(n).enumerate() {
++            let at = Self::LAUNCH_SLOTS + i * Self::LAUNCH_SLOT_STRIDE;
++            self.blob[at..at + Self::LAUNCH_SLOT_STRIDE].fill(0);
++            self.blob[at..at + 4].copy_from_slice(&hash.to_le_bytes());
++            self.blob[at + 4..at + 8].copy_from_slice(&tag.to_le_bytes());
++            self.blob[at + 8..at + 12].copy_from_slice(&value.to_le_bytes());
++        }
++        self.blob[Self::LAUNCH_SLOT_COUNT..Self::LAUNCH_SLOT_COUNT + 4]
++            .copy_from_slice(&(n as u32).to_le_bytes());
++    }
++
+     pub fn struct_bytes(&self) -> Result<Vec<u8>, AhError> {
+         if self.blob.len() != GLOBAL_ACTIVITY_STATE_BLOB_SIZE {
+             return Err(AhError::BadStructSize {
+@@ -538,7 +564,11 @@ impl GlobalActivityState {
+         // activity-slot count makes the client's own encoder deref the content registry
+         // (*DAT_01A0B420) to size a dynamic-width leaf, which a static image does not carry.
+         // ? Self::LAUNCH_SLOT_COUNT.
+-        if self.launch_slot_count() != 0 {
++        // 2026-10-12: the slots are the ACTIVITY OPTION overrides ({name hash, type tag, value};
++        // the client merges them into "Activity Options Game State", FUN_00416B20), and they DO
++        // encode once the value's type tag is in the oracle's registry (D1_ORACLE_EXTRA_TAGS).
++        // `D1_AH_ACTIVITY_OPTIONS_FILE` is the deliberate way in; without it the refusal stands.
++        if self.launch_slot_count() != 0 && std::env::var_os("D1_AH_ACTIVITY_OPTIONS_FILE").is_none() {
+             return Err(AhError::FieldOverflow {
+                 field: "global_activity_state.launch_slot_count is non-zero: the CLIENT'S OWN \
+                         encoder faults on the content registry (READ_UNMAPPED at 0x105B74A via \
+@@ -744,6 +774,48 @@ impl ReplicateMembership {
          Ok(())
      }
  
@@ -634,7 +670,7 @@ index 4e17610..1548c4d 100644
      pub fn pah_region_id(&self) -> u32 {
          let o = Self::PAH_REGIONS + Self::PAH_REGION_ID;
 diff --git a/d1-server/crates/d1-activity-host/src/state.rs b/d1-server/crates/d1-activity-host/src/state.rs
-index 891ceb8..bc9c169 100644
+index 891ceb8..e9200eb 100644
 --- a/d1-server/crates/d1-activity-host/src/state.rs
 +++ b/d1-server/crates/d1-activity-host/src/state.rs
 @@ -171,6 +171,8 @@ pub struct ActivityInstance {
@@ -816,7 +852,28 @@ index 891ceb8..bc9c169 100644
          // ?? The bubble count + unchosen bytes that FUN_002A0320 validates right after. Bounded
          // to the 64-byte field; a too-large count is a config error, so publish what we can and let
          // the loud "bubble count mismatch" name a wrong number rather than silently truncating.
-@@ -586,6 +705,23 @@ impl ActivityInstance {
+@@ -518,6 +637,20 @@ impl ActivityInstance {
+         // field, so order is load-bearing. An all-`0xFF` blob passes rung 33 and then UNREGISTERS
+         // every slice-set region, which is rung 34's `error.sstm_slice_not_found`.
+         let _ = s.set_bubble_chosen(&self.bubble_chosen);
++        // ? `D1_AH_ACTIVITY_OPTIONS_FILE`: activity option overrides, one `hash tag value` (hex)
++        // per line, re-read on every publish so a mission script can change them mid-activity
++        // (e.g. `e0f3e461 80800004 1` = weapons disabled until the player takes the rifle).
++        if let Some(path) = std::env::var_os("D1_AH_ACTIVITY_OPTIONS_FILE") {
++            let options: Vec<(u32, u32, u32)> = std::fs::read_to_string(&path)
++                .unwrap_or_default()
++                .lines()
++                .filter_map(|l| {
++                    let mut p = l.split_whitespace().map(|x| u32::from_str_radix(x.trim_start_matches("0x"), 16));
++                    Some((p.next()?.ok()?, p.next()?.ok()?, p.next()?.ok()?))
++                })
++                .collect();
++            s.set_options(&options);
++        }
+         AhPush::new(self.ah_id, AhMessage::GlobalActivityState(s))
+     }
+ 
+@@ -586,6 +719,23 @@ impl ActivityInstance {
          // the operator reads it; every re-publish after it logs at DEBUG, because a refresh every
          // few seconds repeating the same receipt turns the run log into noise and hides the
          // warnings. The condition is the join/refresh discriminator we already track.
@@ -840,7 +897,7 @@ index 891ceb8..bc9c169 100644
          match self.pah_region {
              Some((region, peer, token)) => match m.set_pah_region(region, peer, token) {
                  Ok(()) if first => tracing::info!(
-@@ -817,13 +953,71 @@ impl ActivityInstance {
+@@ -817,13 +967,71 @@ impl ActivityInstance {
              //
              // Accepted and recorded, not acted on. A stub with one peer has nothing to reserve
              // against, and `43 reservations_failed` is for failures we cannot have.
@@ -914,7 +971,7 @@ index 891ceb8..bc9c169 100644
      /// Advance the replication epoch. `[C]` a `u8`; the wire payload is `{u8 epoch, u8 suppress}`.
      ///
      /// Nothing in a stub needs to call this - it exists because the epoch is authoritative state
-@@ -894,6 +1088,13 @@ impl ActivityInstance {
+@@ -894,6 +1102,13 @@ impl ActivityInstance {
          self.activity_checksum = checksum;
      }
  
@@ -2291,7 +2348,7 @@ index 0000000..00d53dd
 +    Ok(w)
 +}
 diff --git a/d1-server/crates/d1-responder/src/main.rs b/d1-server/crates/d1-responder/src/main.rs
-index 6a76336..26af823 100644
+index 6a76336..4752431 100644
 --- a/d1-server/crates/d1-responder/src/main.rs
 +++ b/d1-server/crates/d1-responder/src/main.rs
 @@ -2158,6 +2158,7 @@ const KNOBS: &[(&str, &str, &str)] = &[
@@ -2510,7 +2567,26 @@ index 6a76336..26af823 100644
      let (b503, b205) = (&b503[..], &b205[..]);
  
      // ?? WHAT THE OLD GUARD COULD NOT SAY: two byte-identical **empty** bodies agree perfectly.
-@@ -3438,6 +3595,19 @@ async fn main() -> Result<()> {
+@@ -2850,6 +3007,10 @@ async fn main() -> Result<()> {
+                                     // task-8 bug happened, and a memcpy cannot drop a field.
+                                     let mut family4_span: Option<Vec<u8>> = None;
+                                     let mut family4_invalidated = false;
++                                    // ? D1_SWAP_TRIGGER (see the block at the echo): the root each
++                                    // family was subscribed with, and how many deltas each has had.
++                                    let mut family_roots: std::collections::BTreeMap<u32, u64> = Default::default();
++                                    let mut swap_deltas: std::collections::BTreeMap<u32, u32> = Default::default();
+                                     // ? THE STATE-1 RACE. `historicaldocs/design/subscription-race-verdict.md`:
+                                     // the client's manager tick sends 0x000C at 0x56A887 and
+                                     // UNCONDITIONALLY writes descriptor state 2 at 0x56A8A7; a later
+@@ -3247,6 +3408,7 @@ async fn main() -> Result<()> {
+                                                                         // So this is only ARMED here; it is written after the
+                                                                         // ACK goes out.
+                                                                         answer_family = Some((class, root, i.sequence));
++                                                                        family_roots.insert(class, root);
+                                                                         // ? RE-SEND DISABLED, 2026-08-08 - it was my own regression.
+                                                                         // It was added to beat the state-1 race, but the answer is
+                                                                         // a BASELINE (flags 0x01) and a second baseline on a family
+@@ -3438,6 +3600,19 @@ async fn main() -> Result<()> {
                                                                                 body ({}B): {}", b.len(),
                                                                                b.iter().map(|x| format!("{x:02x}")).collect::<String>());
                                                                          Some(b)
@@ -2530,7 +2606,7 @@ index 6a76336..26af823 100644
                                                                      } else if id == 701 {
                                                                          // 701's response schema 0x8080189B is the SAME
                                                                          // one-composite shape as 504's, so the client's own
-@@ -3950,6 +4120,10 @@ async fn main() -> Result<()> {
+@@ -3950,6 +4125,10 @@ async fn main() -> Result<()> {
                                                                                  d1_bap::matchmaking::MM_KIND_MATCHMAKING_CONFIGURATION, 0)
                                                                          }
                                                                      };
@@ -2541,7 +2617,78 @@ index 6a76336..26af823 100644
                                                                      let b = rsp.encode();
                                                                      warn!("      -> msg 43 matchmaking_core_response: kind={:?} nonce={:?} \
                                                                             f4 present={} ({}B body: {})",
-@@ -4726,7 +4900,7 @@ mod tests {
+@@ -4267,6 +4446,70 @@ async fn main() -> Result<()> {
+                                                             // block so `family4_span` can only have been set on an
+                                                             // EARLIER frame - the client has demonstrably processed the
+                                                             // baseline by then, i.e. the descriptor is at state 3.
++                                                            // ? `D1_SWAP_TRIGGER=<file>` - a mid-session loadout change, as
++                                                            // the real server sends after an equip or a scripted grant
++                                                            // (the mission's rifle). When the file appears it is read as
++                                                            // `NAME=value` lines that REPLACE this process's content
++                                                            // variables (D1_CHARACTER_FILE, D1_PROFILE_FILE, D1_INVENTORY,
++                                                            // D1_ROSTER_DIR; `FAMILIES=0,3,4` narrows the set), the family
++                                                            // bodies are rebuilt by the same builders as the baseline, and
++                                                            // each goes out as a DELTA (version + 1, never a second
++                                                            // baseline - see d1_bap::queuez_span_as_delta).
++                                                            if conn_index == 0 && inner_type == Some(d1_bap::TYPE_ECHO_REQUEST) {
++                                                                let trigger_file = std::env::var_os("D1_SWAP_TRIGGER").map(std::path::PathBuf::from);
++                                                                if let Some((path, text)) = trigger_file
++                                                                    .and_then(|p| std::fs::read_to_string(&p).ok().map(|t| (p, t)))
++                                                                {
++                                                                    let _ = std::fs::rename(&path, path.with_extension("done"));
++                                                                    let mut families: Vec<u32> = vec![0, 3, 4];
++                                                                    for line in text.lines() {
++                                                                        let Some((k, v)) = line.split_once('=') else { continue };
++                                                                        if k.trim() == "FAMILIES" {
++                                                                            families = v.split(',').filter_map(|x| x.trim().parse().ok()).collect();
++                                                                        } else {
++                                                                            #[allow(unused_unsafe)]
++                                                                            unsafe { std::env::set_var(k.trim(), v.trim()) };
++                                                                        }
++                                                                    }
++                                                                    let acct = env_soid("D1_ACCOUNT_SOID", 0xD100_0000_0000_0001);
++                                                                    let chr = env_soid("D1_CHARACTER_SOID", 0xD100_0000_0000_0101);
++                                                                    for class in families {
++                                                                        let body = match class {
++                                                                            d1_bap::QUEUEZ_FAMILY_ACCOUNT | d1_bap::QUEUEZ_FAMILY_CHARACTER =>
++                                                                                Some(build_family_body(class, acct, chr, "")),
++                                                                            _ => family_roots.get(&class).and_then(|r| build_roster_family_body(class, *r)),
++                                                                        };
++                                                                        let Some(body) = body else {
++                                                                            warn!("      ? SWAP: family {class} has no body to send (not subscribed / no fixtures)");
++                                                                            continue;
++                                                                        };
++                                                                        let sent = swap_deltas.entry(class).or_insert(0);
++                                                                        let earlier = u32::from(class == d1_bap::QUEUEZ_FAMILY_ACCOUNT && family4_invalidated
++                                                                            && family4_invalidate_mode() != Family4Invalidate::Off);
++                                                                        let version = d1_bap::queuez_span_version(&body).unwrap_or(0) + 1 + *sent + earlier;
++                                                                        let Some(delta) = d1_bap::queuez_span_as_delta(&body, version) else {
++                                                                            warn!("      ? SWAP: family {class} body could not be re-stamped as a delta");
++                                                                            continue;
++                                                                        };
++                                                                        match conv.push_with_sequence(d1_bap::TYPE_QUEUEZ_OBJECT, server_seq, &delta) {
++                                                                            Ok(push) => {
++                                                                                let sn = nonces.peek(d1_bap::Direction::ServerToClient);
++                                                                                if let Ok(f) = d1_bap::seal_channel_frame(key, sn, &push) {
++                                                                                    nonces.advance(d1_bap::Direction::ServerToClient);
++                                                                                    if sock.write_all(&f).await.is_ok() {
++                                                                                        warn!("      ?? SWAP: FAMILY {class} DELTA seq {server_seq} (version {version}, {} objects, {}B)",
++                                                                                              d1_bap::queuez_span_object_count(&delta).unwrap_or(0), delta.len());
++                                                                                        server_seq += 1;
++                                                                                        *sent += 1;
++                                                                                    }
++                                                                                }
++                                                                            }
++                                                                            Err(e) => warn!("      [conv] ? SWAP family {class} delta REFUSED by the push accept-set: {e}"),
++                                                                        }
++                                                                    }
++                                                                }
++                                                            }
++
+                                                             let f4mode = family4_invalidate_mode();
+                                                             if f4mode != Family4Invalidate::Off
+                                                                 && conn_index == 0
+@@ -4726,7 +4969,7 @@ mod tests {
          assert_eq!(b503.len(), 70, "the served 503 must be the ten-flag body");
          assert_eq!(b205.len(), 50, "the served 205 must be the ten-flag body");
          assert_eq!(

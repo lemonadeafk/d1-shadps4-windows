@@ -31,6 +31,8 @@ ACTIVITY = "0x992bb471"         # activity-wide records: objectives, cinematics,
 # State 1 plays the "NEW MISSION" banner, 3 shows the objective on the HUD, 0 hides it.
 HIDDEN, ANNOUNCE, ACTIVE = 0, 1, 3
 OBJECTIVE_TAG = 0x80801932      # a schema the objective value needs registered in the encoder
+# the file d1-responder watches (launchers set D1_SWAP_TRIGGER to it) for a loadout change
+SWAP_TRIGGER = os.path.join(os.path.dirname(HERE), "inject", "loadout-swap.txt")
 
 # Steps: (seconds after the previous step, kind, ...)
 #   ("seq", group, sub, name)                       play a kind-5 sequence
@@ -87,6 +89,9 @@ _WALL = [
     (0, "incident", 4 * 3600, "the player reaches the rifle"),
     (0, "trigger", 35, False, "rifle trigger disarmed"),
     (0, "gone", ACTIVITY, "6", "the rifle is taken"),
+    # the login server pushes the character with the Khvostov equipped (the mission launchers
+    # start the player on the "unarmed" variant). tools\loadout_variant.py, section 63.
+    (0, "loadout", "khvostov", "the Khvostov is handed over"),
     (1, "objective", 11, HIDDEN, "GRAB THE RIFLE done"),
     _line(0, 19, "o2_90"),
     (4, "objective", 14, ACTIVE, "objective: FIGHT THROUGH THE WALL"),
@@ -202,6 +207,17 @@ def main():
             _, _, timeout, name = step
             hit = wait_incident(run, armed_at, timeout)
             print(time.strftime("%H:%M:%S"), name, "reported by the game" if hit else "not reported in %d s - going on" % timeout, flush=True)
+            continue
+        if kind == "loadout":
+            # picked up by d1-responder (D1_SWAP_TRIGGER) on the game's next keepalive
+            _, _, variant, name = step
+            import loadout_variant
+            for stale in (SWAP_TRIGGER, os.path.splitext(SWAP_TRIGGER)[0] + ".done"):
+                if os.path.exists(stale):
+                    os.remove(stale)
+            with open(SWAP_TRIGGER, "w") as f:
+                f.write(loadout_variant.swap_lines(variant))
+            print(time.strftime("%H:%M:%S"), name, "requested", flush=True)
             continue
         if kind == "trigger":
             # kind-29 value (schema 0x80800463): {bool enabled, i32 limit}
