@@ -60,6 +60,8 @@ def main():
             except SystemExit as e:
                 print("build failed:", e, flush=True)
                 continue
+            with open(os.path.join(new_guardian.GUARDIANS, "current.txt"), "w") as f:
+                f.write("created")           # later launches serve this Guardian (d1_launch.py)
             # The server has already answered (holding the answer for the ~20 s the build
             # takes crashed the game, run CREATE3), so the new Guardian replaces the default
             # one the same way an equip does: content variables + a live push of every family

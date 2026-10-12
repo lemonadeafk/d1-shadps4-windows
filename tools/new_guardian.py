@@ -95,6 +95,59 @@ def stage(inv, items):
         edit(ELEMENT, src, set_item, os.path.join(inv, "%02d-%s.bin" % (n, bucket)))
 
 
+def assemble(out, inv, meta, view=None):
+    """Build character / profile / peer view in `out` for the Guardian described by `meta`.
+
+    `inv` is its inventory as served. `view`, when given, is the same inventory with the items
+    to wear sorted first in their buckets (tools\\equip_service.py): the character and the peer
+    view are built from it, and the profile keeps `inv`'s item slots but takes the view's
+    equipped list (moving items between slots makes the game announce them as new)."""
+    src = view or inv
+    gear = os.path.join(out, "inventory-gear")       # character / peer view refuse the emblem element
+    shutil.rmtree(gear, ignore_errors=True)
+    shutil.copytree(src, gear, ignore=lambda d, names: [x for x in names if "Emblems" in x])
+    ident = "%d,%d,%d" % (meta["race"], meta["gender"], meta["cls"])
+    level, light = str(meta["level"]), str(meta["light"])
+    char, prof, roster = os.path.join(out, "char.bin"), os.path.join(out, "profile.bin"), os.path.join(out, "roster")
+    shutil.rmtree(roster, ignore_errors=True)
+    profile = ["--identity", ident, "--all-content", "--light", light, "--progression", "117:%d" % meta["xp"]]
+    run("character", "build", "--inventory", gear, "--identity", ident, "--level", level, "--light", light, "--out", char)
+    run("profile", "build", "--inventory", inv, *profile, "--out", prof)
+    if view:
+        worn = os.path.join(out, "profile-view.bin")
+        run("profile", "build", "--inventory", view, *profile, "--out", worn)
+        equipped = []
+        edit(PROFILE, worn, lambda b: equipped.append(bytes(b[0x2B80:0x2B80 + 160])))
+        edit(PROFILE, prof, lambda b: b.__setitem__(slice(0x2B80, 0x2B80 + 160), equipped[0]))
+        os.remove(worn)
+    run("character", "build-peer", "--inventory", gear, "--identity", ident, "--level", level,
+        "--light", light, "--with-family2", "--out-dir", roster)
+    shutil.rmtree(gear)
+    peer = glob.glob(os.path.join(roster, "f0t1-*.bin"))[0]
+    saved = fc.FILES, fc.ABILITIES
+    fc.FILES = [(PEER, peer, 0x218), (CHARACTER, char, 0x250), (PROFILE, prof, None)]
+    fc.ABILITIES = talent_grid.abilities(meta["grid"], meta["active"])
+    try:
+        fc.main()
+    finally:
+        fc.FILES, fc.ABILITIES = saved
+    if meta.get("custom"):
+        custom = bytes.fromhex(meta["custom"])
+        for tag, path in ((PEER, peer), (CHARACTER, char), (PROFILE, prof)):
+            edit(tag, path, lambda b: b.__setitem__(slice(0x0C, 0x0C + 36), custom))
+
+
+def current():
+    """(name, folder, meta) of the Guardian made in the creator and still served, or None."""
+    path = os.path.join(GUARDIANS, "current.txt")
+    if os.path.exists(path):
+        name = open(path).read().strip()
+        folder = os.path.join(GUARDIANS, name)
+        if os.path.exists(os.path.join(folder, "meta.json")):
+            return name, folder, json.load(open(os.path.join(folder, "meta.json")))
+    return None
+
+
 def build(name, cls, race, gender, custom=None, starter=True):
     out = os.path.join(GUARDIANS, name)
     inv = os.path.join(out, "inventory")
@@ -133,28 +186,10 @@ def build(name, cls, race, gender, custom=None, starter=True):
             n += 1
     run("art-arrangement", "write", "--inventory", union)
     run("inventory", "rebuild", "--dir", inv, *nodes)
-    gear = os.path.join(out, "inventory-gear")       # character / peer view refuse the emblem element
-    shutil.copytree(inv, gear, ignore=lambda d, names: [x for x in names if "Emblems" in x])
-    ident = "%d,%d,%d" % (race, gender, cls)
-    char, prof, roster = os.path.join(out, "char.bin"), os.path.join(out, "profile.bin"), os.path.join(out, "roster")
-    run("character", "build", "--inventory", gear, "--identity", ident, "--level", str(level),
-        "--light", str(light), "--out", char)
-    run("profile", "build", "--inventory", inv, "--identity", ident, "--all-content", "--light", str(light),
-        "--progression", "117:%d" % xp, "--out", prof)
-    run("character", "build-peer", "--inventory", gear, "--identity", ident, "--level", str(level),
-        "--light", str(light), "--with-family2", "--out-dir", roster)
-    shutil.rmtree(gear)
-    peer = glob.glob(os.path.join(roster, "f0t1-*.bin"))[0]
-    saved = fc.FILES, fc.ABILITIES
-    fc.FILES = [(PEER, peer, 0x218), (CHARACTER, char, 0x250), (PROFILE, prof, None)]
-    fc.ABILITIES = talent_grid.abilities(grid[0], active)
-    try:
-        fc.main()
-    finally:
-        fc.FILES, fc.ABILITIES = saved
-    if custom:
-        for tag, path in ((PEER, peer), (CHARACTER, char), (PROFILE, prof)):
-            edit(tag, path, lambda b: b.__setitem__(slice(0x0C, 0x0C + 36), custom))
+    meta = dict(cls=cls, race=race, gender=gender, level=level, light=light, xp=xp, grid=grid[0],
+                active=active, custom=custom.hex() if custom else None)
+    json.dump(meta, open(os.path.join(out, "meta.json"), "w"))
+    assemble(out, inv, meta)
     return out
 
 

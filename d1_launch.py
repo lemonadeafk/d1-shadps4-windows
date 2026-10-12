@@ -400,6 +400,16 @@ def session(args):
         env = dict(os.environ,
                    D1_MANIFEST_FILE=str(MANIFEST), D1_UPLOAD_DIR=str(run / "uploads"),
                    D1_BAP_IP=ip, D1_CLIENT_IP=ip, D1_AH_IP=ip)
+        # A Guardian made in the game's creator stays the served one on later launches
+        # (tools\creation_service.py writes capture-rig\guardians\current.txt; delete that file,
+        # or run "Use the default Hunter.cmd", to go back to the pre-built Hunter).
+        current = REPO / "capture-rig" / "guardians" / "current.txt"
+        if current.exists():
+            g = REPO / "capture-rig" / "guardians" / current.read_text().strip()
+            if (g / "char.bin").exists():
+                env.update(D1_INVENTORY=str(g / "inventory"), D1_CHARACTER_FILE=str(g / "char.bin"),
+                           D1_PROFILE_FILE=str(g / "profile.bin"), D1_ROSTER_DIR=str(g / "roster"))
+                log(f"serving the created Guardian in {g}")
         # run-boot.sh's pinned account/character environment (lines 87-220). Without the push at
         # `echo`, families 4 then 3, investment_signin has nothing to satisfy it and the client
         # gives up with error.no_investment_connection ("chicken") - seen here on 2026-10-10.

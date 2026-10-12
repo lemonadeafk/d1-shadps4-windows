@@ -1526,3 +1526,26 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   are at least 12 s long in my recordings (they fill the whole capture window), so they overlap
   at the present 7 s spacing; the real cue points inside the room need the trigger log from a
   full playthrough.
+
+## 71. A created Guardian stays; what a level-1 character can launch (2026-10-12 15:35, runs PERSIST1/2, NEWMIS, RULES1)
+- PERSISTENCE: creation_service writes capture-rig\guardians\current.txt; d1_launch.py then
+  serves that Guardian (inventory, character, profile, peer view) on every launch. New
+  launchers: "Launch Destiny (create a new Guardian).cmd" (Tower run with D1_EMPTY_ROSTER=1)
+  and "Use the default Hunter.cmd" (deletes current.txt). PERSIST1 created a Titan, PERSIST2 (a
+  plain launch afterwards) came up as that level-1 character.
+- new_guardian.assemble(out, inv, meta, view) is the shared builder (meta.json per Guardian:
+  class, race, gender, level, light, xp, talent grid, node set, customization);
+  equip_service and loadout_variant now work on the created Guardian when one is current
+  (equips are rebuilt in its own folder, so they are kept; the mission's "unarmed" / "khvostov"
+  variants are derived from it). NOT run in a game for a created Guardian yet.
+- LEVEL 1 CANNOT LAUNCH MUCH: the Director shows only Tower, Crucible and Earth, and on Earth
+  every node is dim - the autopilot could launch neither the Moon map nor the mission's
+  Patrol node (NEWMIS stayed in orbit). tools\director_rules.py 10 as that character: story
+  entries are status 2 "requirements not met" by default and need unlock FLAGS, e.g. entry 17
+  (0x5bf0aa06): hidden unless FLAG(435), status 4 with FLAG(3826), 3 with FLAG(3539); entry 18
+  (0x0f0a7e94): 4 with FLAG(292), 3 with FLAG(2548) or FLAG(3566); many others test
+  VALUE(1272) (probably the character's level or Light) and FLAGs 6025-6027. Which entry is
+  "A Guardian Rises" (activity 165, hash 0xb9fccac3) is not established. The flags a fresh
+  character's quest state would carry are not served.
+- So today: a created Guardian can walk the Tower; the mission launchers need the default
+  Hunter (or a --geared created one) until those flags are understood.

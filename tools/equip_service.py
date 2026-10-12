@@ -24,6 +24,7 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import finish_character as fc  # noqa: E402
+import new_guardian  # noqa: E402
 
 RIG = os.path.join(fc.REPO, "capture-rig")
 INVENTORY = os.path.join(RIG, "inventory-hunter-full")
@@ -33,10 +34,16 @@ SWAP_TRIGGER = os.path.join(os.path.dirname(HERE), "inject", "loadout-swap.txt")
 ORDER = os.path.join(LIVE, "equipped.txt")   # the SOIDs equipped so far, one per line
 
 
+def served():
+    """(inventory folder, created Guardian or None): what the launcher is serving."""
+    cur = new_guardian.current()
+    return (os.path.join(cur[1], "inventory"), cur) if cur else (INVENTORY, None)
+
+
 def elements():
     """{file index: (bucket name, path)} of the served inventory."""
     out = {}
-    for p in sorted(glob.glob(os.path.join(INVENTORY, "*.bin"))):
+    for p in sorted(glob.glob(os.path.join(served()[0], "*.bin"))):
         m = re.match(r"(\d+)-(.+)\.bin$", os.path.basename(p))
         if m:
             out[int(m.group(1))] = (m.group(2), p)
@@ -57,7 +64,8 @@ def view(equipped):
         head = first[el[n][0]]
         holder = next(k for k, v in names.items() if v == head)     # who sits first now
         names[holder], names[n] = names[n], head
-    dst = os.path.join(LIVE, "view")
+    cur = served()[1]
+    dst = os.path.join(cur[1] if cur else LIVE, "view")
     if os.path.isdir(dst):
         shutil.rmtree(dst)
     os.makedirs(dst)
@@ -74,9 +82,13 @@ def run(*a):
 
 
 def build(equipped):
-    """Rebuild character / peer view / profile with `equipped` (SOIDs) worn; returns LIVE."""
+    """Rebuild character / peer view / profile with `equipped` (SOIDs) worn; returns the folder."""
     os.makedirs(LIVE, exist_ok=True)
     full = view(equipped)
+    cur = served()[1]
+    if cur:         # a Guardian made in the creator: rebuilt in place, so the change is kept
+        new_guardian.assemble(cur[1], os.path.join(cur[1], "inventory"), cur[2], full)
+        return cur[1]
     # character and peer view refuse the emblem element (they take the emblem via --emblem)
     gear = os.path.join(LIVE, "view-gear")
     if os.path.isdir(gear):
@@ -122,6 +134,9 @@ def build(equipped):
 
 
 def swap_lines():
+    cur = served()[1]
+    if cur:
+        return new_guardian.env_lines(cur[0]) + "FAMILIES=0,3,4\n"
     return ("D1_ROSTER_DIR=%s\nD1_CHARACTER_FILE=%s\nD1_PROFILE_FILE=%s\nFAMILIES=0,3,4\n"
             % (os.path.join(LIVE, "roster"), os.path.join(LIVE, "char.bin"), os.path.join(LIVE, "profile.bin")))
 

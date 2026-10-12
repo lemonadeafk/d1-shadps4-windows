@@ -43,10 +43,17 @@ def build(name, slots):
     if os.path.isdir(roster):
         shutil.rmtree(roster)
     os.makedirs(out, exist_ok=True)
-    src_roster = os.path.join(fc.REPO, os.path.dirname(fc.FILES[0][1]))
+    files = list(fc.FILES[:2])
+    import new_guardian
+    cur = new_guardian.current()
+    if cur:             # a Guardian made in the creator is being served: vary THAT one
+        peer = os.path.basename(fc.FILES[0][1])
+        files = [(fc.FILES[0][0], os.path.join(cur[1], "roster", peer), fc.FILES[0][2]),
+                 (fc.FILES[1][0], os.path.join(cur[1], "char.bin"), fc.FILES[1][2])]
+    src_roster = os.path.join(fc.REPO, os.path.dirname(files[0][1]))
     shutil.copytree(src_roster, roster)
-    targets = [(fc.FILES[0], os.path.join(roster, os.path.basename(fc.FILES[0][1]))),
-               (fc.FILES[1], os.path.join(out, "char.bin"))]
+    targets = [(files[0], os.path.join(roster, os.path.basename(files[0][1]))),
+               (files[1], os.path.join(out, "char.bin"))]
     img = os.path.join(tempfile.gettempdir(), "d1_variant.img")
     for (tag, rel, equip), dst in targets:
         r = fc.run(fc.OBJFILE, "decode", tag, os.path.join(fc.REPO, rel), img)
