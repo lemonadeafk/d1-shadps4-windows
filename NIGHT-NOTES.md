@@ -1124,3 +1124,11 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
 - The squad Ghost (sub 95) spawns visible by the gate also with the lights on. Its one
   performance (0x716A1D9B on nux_ghost, sub 125) sent while facing it: 6 frames over 8 s, no
   movement. The actor's sequence (+0xABC) stayed 0 last time: the performance is not accepted.
+- 22:15 (runs NAV1 Moon, NAV2 highway start): THE GHOST PULL-OUT WORKS. Touchpad on the Moon map
+  and at the mission's highway start (bubble 14): the gun is lowered, the left hand comes up with
+  the Ghost, NAV MODE HUD (Desktop\GHOST-in-hand-moon.png, GHOST-in-hand-highway.png). So the
+  held-item switch is fine; nothing to fix there. ONLY inside the Wall (bubble 3) the hand keeps
+  the gun in nav mode - tested there before any Ghost record was sent, so it is that room's own
+  content: the Ghost there is the scripted squad Ghost (sq_nux_ghost) + ho_ghostlight, already
+  "out" of the player's hand. Remaining Ghost work = that room's script (its performance is not
+  accepted yet), not the player's hand.
