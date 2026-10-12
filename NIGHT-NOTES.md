@@ -1217,3 +1217,20 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   sequence -> gate opens -> GRAB THE RIFLE ("Use the rifle to defend yourself from the
   encroaching Fallen." in Nav Mode, Desktop\MISSION-objective-grab-the-rifle.png) -> Fallen.
   Run MIS2 end to end from a fresh launch, walked by the test walker: every step sent, no crash.
+
+## 60. Beyond the gate; the Ghost's voice measured (2026-10-12 00:15, runs RIF1 / AUD1)
+- Scripted objects carry their position in the definition at +0xF8 (def = resolve([rec]) +
+  [rec+8]). Wall room: o_breach_control (396.8,-766.1,18.7) - exactly where the Ghost's
+  performance flies to (it goes to the power control); gating_lights (410.1,-788.7,17.6);
+  gating_back / nut_back = the gate (390.4,-793.1 / -793.5, 17.4); device_invis_light
+  (428.8,-813.8,21.8); floor grates (422.1,-816; 507.6,-722); tripwires 468..504, -718..-730;
+  cables (535.0,-815.8,28.2); o_chest_primary_weapon (534.9,-736.8,16.5) = THE RIFLE, ~150 m east
+  of the platform. With the gate gone the walker gets through it to (392,-800,15.6); the route
+  on from there was not found blind (stairs there lead back up to the platform).
+- VOICE: recorded the PC's audio output (python `soundcard` loopback) in a quiet Wall room.
+  Background rms 0.0005. seq_d_o1_10 -> 0.012-0.023 for ~4.5 s; seq_d_o1_15, _20b, _20c, _20d
+  -> the same kind of 3-4.5 s burst (speech band 50-98 %); seq_fallen_scream_far 0.004-0.015;
+  seq_m_cue1 only 0.001 (very quiet); seq_d_o1_20 no burst. So the Ghost's lines DO play, with
+  or without the Ghost actor. Desktop\GHOST-lines-recorded-from-game.wav = 20b, 20c, 20d as
+  captured (normalised). Earlier "no voice" was most likely values overwritten by the host's
+  repeat frames (the lines were sent 50 s after arrival, the default burst lasts 120 s).
