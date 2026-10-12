@@ -51,12 +51,20 @@ def reports(payload_hex, known):
 class Watcher:
     """Follows a run's activity-host.log; wait() returns when the game reports a record."""
 
-    def __init__(self, run, bubble, world=WORLD):
+    def __init__(self, run, bubble, world=WORLD, history=False):
         self.path = os.path.join(run, "activity-host.log")
         self.known = slots(bubble, world)
-        self.offset = os.path.getsize(self.path) if os.path.exists(self.path) else 0
+        # history: also count what the game reported before this watcher existed (a player who
+        # ran past a trigger before the script got to its wait must not stall the script)
+        self.offset = 0 if history else (os.path.getsize(self.path) if os.path.exists(self.path) else 0)
+        self.seen = []
 
     def poll(self):
+        out = self._read()
+        self.seen += out
+        return out
+
+    def _read(self):
         out = []
         with open(self.path, "rb") as f:
             f.seek(self.offset)
@@ -70,6 +78,9 @@ class Watcher:
         return out
 
     def wait(self, group, kind, sub, timeout):
+        for r in self.seen:
+            if r[1:4] == (group, kind, sub):
+                return r
         end = time.time() + timeout
         while time.time() < end:
             for r in self.poll():

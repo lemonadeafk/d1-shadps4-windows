@@ -160,7 +160,7 @@ def main():
         time.sleep(SETTLE[a.script])  # let the host's arrival frames and their repeats finish first
     import object_state
     import sense_reports
-    watcher = sense_reports.Watcher(run, a.bubble, WORLD[2:])
+    watcher = sense_reports.Watcher(run, a.bubble, WORLD[2:], history=True)
     os.environ["D1_ORACLE_EXTRA_TAGS"] = "%#x,%#x" % (object_state.STATE_TAG, OBJECTIVE_TAG)
     objective = open(os.path.join(os.path.dirname(HERE), "capture", "values", "objective_default.bin"), "rb").read()
     seq = 100                       # scripted-object sequence numbers only ever rise
