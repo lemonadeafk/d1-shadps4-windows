@@ -1,0 +1,174 @@
+r"""Answer the game's "equip this item" requests (investment 403) for the served Hunter.
+
+    python tools\equip_service.py                 watch the newest run and answer its requests
+    python tools\equip_service.py --equip 0xD10000000000030E    build the result only (no game)
+
+The login server logs each request ("EQUIP REQUEST 403 body <hex>": the bit-packed item
+SOID). For that item this rebuilds the three objects that say what is equipped - character
+(family 3), peer view (family 0), profile (family 4) - with d1-oracle's own builders from a
+VIEW of the served inventory in which the requested item sorts first in its bucket (the
+builders treat the first item of a bucket as the equipped one), finishes them
+(tools\finish_character.py: weapon patterns, abilities, helmet) and hands them to the login
+server through its D1_SWAP_TRIGGER file; the server pushes them as deltas and the game
+re-equips. The item elements themselves (family 4/3, D1_INVENTORY) keep their SOIDs and are
+not touched. NIGHT-NOTES section 65.
+"""
+import argparse
+import glob
+import os
+import re
+import shutil
+import sys
+import time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import finish_character as fc  # noqa: E402
+
+RIG = os.path.join(fc.REPO, "capture-rig")
+INVENTORY = os.path.join(RIG, "inventory-hunter-full")
+LIVE = os.path.join(RIG, "variants", "live")
+BASE_SOID = 0xD100000000000301          # element file NN carries SOID BASE_SOID + NN
+SWAP_TRIGGER = os.path.join(os.path.dirname(HERE), "inject", "loadout-swap.txt")
+ORDER = os.path.join(LIVE, "equipped.txt")   # the SOIDs equipped so far, one per line
+
+
+def elements():
+    """{file index: (bucket name, path)} of the served inventory."""
+    out = {}
+    for p in sorted(glob.glob(os.path.join(INVENTORY, "*.bin"))):
+        m = re.match(r"(\d+)-(.+)\.bin$", os.path.basename(p))
+        if m:
+            out[int(m.group(1))] = (m.group(2), p)
+    return out
+
+
+def view(equipped):
+    """A copy of the inventory where each equipped item is the first of its bucket."""
+    el = elements()
+    first = {}
+    for n in sorted(el):
+        first.setdefault(el[n][0], n)
+    names = {n: n for n in el}
+    for soid in equipped:
+        n = soid - BASE_SOID
+        if n not in el:
+            raise SystemExit("no served item has SOID %#x" % soid)
+        head = first[el[n][0]]
+        holder = next(k for k, v in names.items() if v == head)     # who sits first now
+        names[holder], names[n] = names[n], head
+    dst = os.path.join(LIVE, "view")
+    if os.path.isdir(dst):
+        shutil.rmtree(dst)
+    os.makedirs(dst)
+    for n, (bucket, path) in el.items():
+        shutil.copyfile(path, os.path.join(dst, "%02d-%s.bin" % (names[n], bucket)))
+    return dst
+
+
+def run(*a):
+    r = fc.run(fc.ORACLE, *a)
+    if r.returncode:
+        raise SystemExit("d1-oracle %s: %s%s" % (" ".join(a[:2]), r.stdout[-400:], r.stderr[-400:]))
+    return r.stdout
+
+
+def build(equipped):
+    """Rebuild character / peer view / profile with `equipped` (SOIDs) worn; returns LIVE."""
+    os.makedirs(LIVE, exist_ok=True)
+    full = view(equipped)
+    # character and peer view refuse the emblem element (they take the emblem via --emblem)
+    gear = os.path.join(LIVE, "view-gear")
+    if os.path.isdir(gear):
+        shutil.rmtree(gear)
+    shutil.copytree(full, gear, ignore=lambda d, names: [n for n in names if "Emblems" in n])
+    char, prof, roster = (os.path.join(LIVE, "char.bin"), os.path.join(LIVE, "profile.bin"),
+                          os.path.join(LIVE, "roster"))
+    if os.path.isdir(roster):
+        shutil.rmtree(roster)
+    run("character", "build", "--inventory", gear, "--identity", "0,0,1", "--out", char)
+    run("profile", "build", "--inventory", full, "--identity", "0,0,1", "--all-content",
+        "--progression", "117:400000", "--out", prof)
+    run("character", "build-peer", "--inventory", gear, "--identity", "0,0,1", "--with-family2",
+        "--out-dir", roster)
+    peer = glob.glob(os.path.join(roster, "f0t1-*.bin"))[0]
+    saved = fc.FILES
+    fc.FILES = [("0x808017FD", peer, 0x218), ("0x80801954", char, 0x250), ("0x80801743", prof, None)]
+    try:
+        fc.main()
+    finally:
+        fc.FILES = saved
+    with open(ORDER, "w") as f:
+        f.write("".join("%#x\n" % s for s in equipped))
+    return LIVE
+
+
+def swap_lines():
+    return ("D1_ROSTER_DIR=%s\nD1_CHARACTER_FILE=%s\nD1_PROFILE_FILE=%s\nFAMILIES=0,3,4\n"
+            % (os.path.join(LIVE, "roster"), os.path.join(LIVE, "char.bin"), os.path.join(LIVE, "profile.bin")))
+
+
+def soid_of(body_hex):
+    """The item SOID in a 403 request body: 64 bits at some bit offset, high bytes D1 00 00."""
+    bits = bin(int(body_hex, 16))[2:].zfill(len(body_hex) * 4)
+    for i in range(0, len(bits) - 63):
+        v = int(bits[i:i + 64], 2)
+        if v >> 40 == 0xD10000 and v - BASE_SOID in elements():
+            return v
+    return None
+
+
+def newest_run():
+    runs = sorted(glob.glob(os.path.join(fc.REPO, "runs", "*WIN-*")), key=os.path.getmtime)
+    return runs[-1] if runs else None
+
+
+def watch():
+    run_dir = newest_run()
+    log = os.path.join(run_dir, "responder.log")
+    print("watching", log, flush=True)
+    equipped = []
+    offset = 0
+    while True:
+        if newest_run() != run_dir:
+            return
+        try:
+            with open(log, "rb") as f:
+                f.seek(offset)
+                data = f.read()
+        except OSError:
+            data = b""
+        end = data.rfind(b"\n") + 1
+        offset += end
+        for line in data[:end].decode("utf-8", "replace").splitlines():
+            m = re.search(r"EQUIP REQUEST 403 body ([0-9a-f]+)", line)
+            if not m:
+                continue
+            soid = soid_of(m.group(1))
+            if soid is None:
+                print(time.strftime("%H:%M:%S"), "equip request not understood:", m.group(1), flush=True)
+                continue
+            bucket = elements()[soid - BASE_SOID][0]
+            equipped = [s for s in equipped if elements()[s - BASE_SOID][0] != bucket] + [soid]
+            build(equipped)
+            for stale in (SWAP_TRIGGER, os.path.splitext(SWAP_TRIGGER)[0] + ".done"):
+                if os.path.exists(stale):
+                    os.remove(stale)
+            with open(SWAP_TRIGGER, "w") as f:
+                f.write(swap_lines())
+            print(time.strftime("%H:%M:%S"), "equipped %#x (%s)" % (soid, bucket), flush=True)
+        time.sleep(0.5)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--equip", action="append", help="build with this SOID equipped and exit")
+    a = ap.parse_args()
+    if a.equip:
+        print(build([int(s, 0) for s in a.equip]))
+        return
+    watch()
+
+
+if __name__ == "__main__":
+    main()
