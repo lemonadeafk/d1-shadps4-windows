@@ -1238,3 +1238,29 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   too (FIND A WEAPON at the start, GRAB THE RIFLE when the gate opens). Fresh launch, every
   step sent, alive at the end: Nav Mode shows GRAB THE RIFLE, the GHOST speaker icon is up and
   the Fallen are on the radar (Desktop\WALL-objective-ghost-fallen.png).
+
+## 61. Dialogue by objective; an intermittent crash inside the Wall (2026-10-12 01:10)
+- Dialogue sequences are named by objective: seq_d_o1_* = ENTER THE WALL (highway), o2_* = FIND A
+  WEAPON (inside the Wall), o3_* = GRAB THE RIFLE, o4_*, o5_* later. Subs: o1_10 3, o1_15 4,
+  o1_20 5, o1_20b/c/d 6-8, o2_10 9, _20 10, _30 11, _35 12, _36 13, _40 14, _50 15, _60 16,
+  _70 17, _80 18, _90 19, _95 20, o3_10..50 21-25, o4_20/30/40/45 26-29, o5_10/20/30 30-32.
+  Every one was played in a quiet room and recorded: Desktop\ghost-lines\seq_d_<name>.wav
+  (run AUD2). Loud (peak rms 0.03-0.09): all but o1_20, o2_30, o2_35, o2_36, o3_30 (0.005-0.007,
+  faint) and o3_40, o3_50, o4_20 (silent). The durations that run measured are not usable (the
+  room's ambience rose above the threshold after the first lines).
+- mission_director scripts rewritten on that naming: the highway plays o1_10, o1_15, then o1_20b
+  when the game reports pm_in_wall (the stairs); the Wall plays o2_10 ... o2_95 in order around
+  the Ghost / power / gate / Fallen steps. WHICH moment each line belongs to is my guess from
+  the names - I cannot hear them; the user can check against the recordings.
+  Verified: MIS3 (from the highway, walked in: all 35 steps sent) and CR1 (inside the Wall: all
+  steps sent, alive 5 minutes after with the Fallen attacking).
+- CRASH, intermittent (2 of 9 runs that entered the Wall on foot: HWY2, MIS3): 0xc0000005 at
+  eboot 0xBBDEDE = `mov edi,[rbx]` in FUN_00BBDEC0 with rbx = its 4th argument = 0x4F (not a
+  pointer; r12 = 0xF, rsi = 0). The function has no direct callers (reached through a pointer).
+  Both times the player was in the corridor just inside the Wall (x 351-376, y ~ -795), once a
+  few seconds after the area switch, once 2 m 45 s after it (4 s after o2_95). Not reproduced
+  in CR1 (platform, Fallen active 5 min) or CR2 (corridor, Fallen spawned, 4 min).
+  (Section 58 gave the address as 0xCFDEDE - wrong base subtracted.)
+  shadPS4 now also logs the caller chain (frame-pointer walk) for an unhandled access
+  violation, so the next occurrence names who passed the bad pointer
+  (patches\shadps4-crash-address-log.diff, in shadps4-all-changes.diff).

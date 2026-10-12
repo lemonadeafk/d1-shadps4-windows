@@ -40,49 +40,67 @@ OBJECTIVE_TAG = 0x80801932      # a schema the objective value needs registered 
 #   ("wait", group, kind, sub, timeout, name)       until the GAME reports that record (udt 6), or timeout
 #   ("perf", group, sub, value file, name)          start an actor's performance (kind-40 sensor)
 #   ("spawn", group, name[, subs])                  squad members get their actors (all, or the listed subs)
+# Dialogue sequences are named by objective: seq_d_o1_* belong to ENTER THE WALL (the highway),
+# seq_d_o2_* to FIND A WEAPON (inside the Wall), o3 to GRAB THE RIFLE, o4 / o5 to the later
+# objectives. Subs in group DIALOGUE: o1_10 3, o1_15 4, o1_20 5, o1_20b 6, o1_20c 7, o1_20d 8,
+# o2_10 9, _20 10, _30 11, _35 12, _36 13, _40 14, _50 15, _60 16, _70 17, _80 18, _90 19,
+# _95 20, o3_10..50 21-25, o4_20/30/40/45 26-29, o5_10/20/30 30-32. Each is played here in its
+# named order; WHICH script moment each belongs to is a guess (NIGHT-NOTES section 61).
+def _line(delay, sub, name):
+    return (delay, "seq", DIALOGUE, sub, "seq_d_" + name)
+
+
+# Inside the Wall. The Ghost's performance flies it to the power control (o_breach_control) with
+# its torch; o_breach_control channel 2 = the room's light level; the gate to the rifle =
+# o_breach_gating_back + o_breach_nut_back. NIGHT-NOTES sections 54-56.
+_WALL = [
+    (0, "spawn", BREACH, "the Ghost appears", [95]),      # sq_nux_ghost__ghost, by the gate
+    _line(1, 9, "o2_10"),
+    _line(7, 10, "o2_20"),
+    _line(7, 11, "o2_30"),
+    (2, "perf", BREACH, 125, "ghost_perf.bin", "the Ghost flies to the power control with its torch"),
+    _line(6, 12, "o2_35"),
+    _line(6, 13, "o2_36"),
+    # the game itself reports when the player walks to the right-hand side of the platform
+    (0, "wait", BREACH, 28, 123, 20, "pm_nux_ghost_light_up_fly_to_gun"),
+    (1, "state", BREACH, "0", (0.0, 0.0, 0.25), "power 25%"),
+    (1, "state", BREACH, "0", (0.0, 0.0, 0.5), "power 50%"),
+    (1, "state", BREACH, "0", (0.0, 0.0, 0.75), "power 75%"),
+    (1, "state", BREACH, "0,1,4,8", (0.0, 0.0, 1.0), "power on"),
+    (1, "seq", DIALOGUE, 0, "seq_m_cue1"),
+    _line(1, 14, "o2_40"),
+    _line(7, 15, "o2_50"),
+    (5, "gone", BREACH, "5,6", "gate opens"),
+    (1, "objective", 7, HIDDEN, "FIND A WEAPON done"),
+    (1, "objective", 11, ACTIVE, "objective: GRAB THE RIFLE"),
+    _line(2, 16, "o2_60"),
+    (6, "seq", DIALOGUE, 33, "seq_fallen_scream_far"),
+    (3, "spawn", BREACH, "the Fallen arrive"),
+    _line(3, 17, "o2_70"),
+    _line(8, 18, "o2_80"),
+    _line(9, 19, "o2_90"),
+    _line(8, 20, "o2_95"),
+]
 SCRIPTS = {
-    # Inside the Wall: the Ghost's first lines over the music cue, then the power comes up
-    # (o_breach_control channel 2 = the room's light level) and the gate to the rifle opens
-    # (o_breach_gating_back + o_breach_nut_back removed). NIGHT-NOTES section 54.
-    "wall": [
-        (0, "spawn", BREACH, "the Ghost appears", [95]),      # sq_nux_ghost__ghost, by the gate
-        (3, "perf", BREACH, 125, "ghost_perf.bin", "the Ghost flies into the room with its torch"),
-        (2, "seq", DIALOGUE, 0, "seq_m_cue1"),
-        (1, "seq", DIALOGUE, 3, "seq_d_o1_10"),
-        (8, "seq", DIALOGUE, 4, "seq_d_o1_15"),
-        # the game itself reports when the player walks to the right-hand side of the platform
-        (0, "wait", BREACH, 28, 123, 45, "pm_nux_ghost_light_up_fly_to_gun"),
-        (1, "state", BREACH, "0", (0.0, 0.0, 0.25), "power 25%"),
-        (1, "state", BREACH, "0", (0.0, 0.0, 0.5), "power 50%"),
-        (1, "state", BREACH, "0", (0.0, 0.0, 0.75), "power 75%"),
-        (1, "state", BREACH, "0,1,4,8", (0.0, 0.0, 1.0), "power on"),
-        (3, "seq", DIALOGUE, 5, "seq_d_o1_20"),
-        (3, "gone", BREACH, "5,6", "gate opens"),
-        (5, "seq", DIALOGUE, 33, "seq_fallen_scream_far"),
-        (4, "spawn", BREACH, "the Fallen arrive"),
-        (2, "seq", DIALOGUE, 6, "seq_d_o1_20b"),
-        (8, "seq", DIALOGUE, 7, "seq_d_o1_20c"),
-    ],
+    # started inside the Wall (the "inside the Wall" launcher)
+    "wall": [(0, "objective", 7, ACTIVE, "objective: FIND A WEAPON")] + _WALL,
+    # The whole mission from its real start on the highway. Nothing happens in the Wall until
+    # the game starts reporting the Wall's own records (= the player has walked in and the host
+    # has switched to that bubble); 16 s later the host's follow-up frames
+    # (D1_AH_SENSOR_FOLLOW_MAX=3) are over and cannot overwrite the script's values.
+    "mission": [
+        (0, "objective", 3, ANNOUNCE, "NEW MISSION - Restoration"),
+        (7, "objective", 3, ACTIVE, "objective: ENTER THE WALL"),
+        _line(2, 3, "o1_10"),
+        _line(7, 4, "o1_15"),
+        (0, "wait", ACTIVITY, 28, 33, 4 * 3600, "pm_in_wall (the stairs at the Wall's foot)"),
+        _line(0, 6, "o1_20b"),
+        (0, "wait", BREACH, 4, 0, 4 * 3600, "the player walks into the Wall"),
+        (16, "objective", 3, HIDDEN, "ENTER THE WALL done"),
+        (1, "objective", 7, ACTIVE, "objective: FIND A WEAPON"),
+        (1, "seq", DIALOGUE, 34, "seq_fallen_scream_mid"),
+    ] + _WALL,
 }
-# The whole mission from its real start on the highway: nothing happens in the Wall until the
-# game starts reporting the Wall's own records (= the player has walked in and the host has
-# switched to that bubble); then the Wall sequence plays. 16 s = the host's follow-up frames
-# (D1_AH_SENSOR_FOLLOW_MAX=3) are over, so they cannot overwrite the script's values.
-SCRIPTS["mission"] = [(0, "objective", 3, ANNOUNCE, "NEW MISSION - Restoration"),
-                      (7, "objective", 3, ACTIVE, "objective: ENTER THE WALL"),
-                      (0, "wait", BREACH, 4, 0, 4 * 3600, "the player walks into the Wall"),
-                      (16, "objective", 3, HIDDEN, "ENTER THE WALL done"),
-                      (1, "objective", 7, ACTIVE, "objective: FIND A WEAPON"),
-                      (1, "seq", DIALOGUE, 34, "seq_fallen_scream_mid")]
-_wall = []
-for _step in SCRIPTS["wall"]:
-    _wall.append(_step)
-    if _step[-1] == "gate opens":
-        _wall += [(1, "objective", 7, HIDDEN, "FIND A WEAPON done"),
-                  (1, "objective", 11, ACTIVE, "objective: GRAB THE RIFLE")]
-SCRIPTS["mission"] += _wall
-# started inside the Wall: the same room with its objectives
-SCRIPTS["wall"] = [(0, "objective", 7, ACTIVE, "objective: FIND A WEAPON")] + _wall
 SETTLE = {"wall": 50, "mission": 50}     # seconds after in_world before the first step
 
 

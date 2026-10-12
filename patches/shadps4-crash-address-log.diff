@@ -1,8 +1,8 @@
 diff --git a/src/core/signals.cpp b/src/core/signals.cpp
-index dcfd50a3..eaad425c 100644
+index dcfd50a3..492ecd7f 100644
 --- a/src/core/signals.cpp
 +++ b/src/core/signals.cpp
-@@ -143,6 +143,16 @@ static LONG WINAPI SignalHandler(EXCEPTION_POINTERS* pExp) noexcept {
+@@ -143,6 +143,39 @@ static LONG WINAPI SignalHandler(EXCEPTION_POINTERS* pExp) noexcept {
          use_static_windows_guest_red_zone_protection ? static_protection_exception : true;
      if (report_unhandled) {
          LOG_CRITICAL(Debug, "Unhandled Exception code {:#x} at {}", code, address);
@@ -15,6 +15,29 @@ index dcfd50a3..eaad425c 100644
 +                         pExp->ExceptionRecord->ExceptionInformation[0] == 1 ? "write" : "read",
 +                         pExp->ExceptionRecord->ExceptionInformation[1], ctx->Rsp, ctx->Rbp,
 +                         ctx->Rdi, ctx->Rsi, ctx->Rax, ctx->Rcx, ctx->Rdx, ctx->R12);
++            // Guest code keeps frame pointers: walk a few frames so the log names the callers.
++            // [rsp] first, for a fault in a function's prologue before its frame is set up.
++            const auto readable = [](u64 addr) {
++                MEMORY_BASIC_INFORMATION mbi;
++                return addr != 0 && VirtualQuery(reinterpret_cast<void*>(addr), &mbi, sizeof(mbi)) &&
++                       mbi.State == MEM_COMMIT &&
++                       (mbi.Protect & (PAGE_READONLY | PAGE_READWRITE | PAGE_EXECUTE_READ |
++                                       PAGE_EXECUTE_READWRITE)) != 0;
++            };
++            std::string chain;
++            if (readable(ctx->Rsp)) {
++                chain += fmt::format(" [rsp]={:#x}", *reinterpret_cast<u64*>(ctx->Rsp));
++            }
++            u64 frame = ctx->Rbp;
++            for (int i = 0; i < 8 && readable(frame) && readable(frame + 8); ++i) {
++                chain += fmt::format(" ret{}={:#x}", i, *reinterpret_cast<u64*>(frame + 8));
++                const u64 next = *reinterpret_cast<u64*>(frame);
++                if (next <= frame) {
++                    break;
++                }
++                frame = next;
++            }
++            LOG_CRITICAL(Debug, "Callers:{}", chain);
 +        }
          Common::Singleton<Core::Emulator>::Instance()->Shutdown();
      }
