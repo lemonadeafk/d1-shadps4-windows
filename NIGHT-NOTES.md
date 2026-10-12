@@ -1373,3 +1373,12 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
 - RULE (user, 12:35): no remote control of the game while they use the PC - no key input, no
   focus changes; autopilot launches steal focus too, so no launches by me until they say so.
   gamewin.shot_bg captures the window without focus.
+- 12:55, run EQUIP3 (Tower, launched and driven by me with the user's go-ahead): the pop-ups
+  were the SLOT MOVE. equip_service now leaves the 340 item slots as served and changes only
+  the equipped list (profile +0x2B80, 20 SOIDs by equip ordinal) plus the character / peer view
+  equipment entries. Two equips (Fatebringer, then The Last Word back): the menu swaps the
+  equipped icon and the spare ~8 s after X, frames captured every second through both swaps
+  and after closing the menu show no "acquired" pop-up
+  (Desktop\EQUIP-fatebringer-equipped-in-menu.png). The launcher-started equip service
+  (<run>\equip-service.log) answered both. Character screen cursor: from the centre, hold
+  left 0.6 s + up 0.2 s, then right 0.2 s + down 0.1 s = the primary slot; left 0.17 s = spare.
