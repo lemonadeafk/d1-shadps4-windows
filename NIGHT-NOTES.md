@@ -1043,3 +1043,8 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   the stale slice array. patches\shadps4-volume-self-overlap.diff (in shadps4-all-changes.diff).
 - Result at the mission start: near-black pixels 31% -> 0%; cars, the Wall, the gun and the
   hands are all visible in shade.
+- USER-VERIFIED (2026-10-11 evening): the highway start "looks way better, actually beautiful",
+  nothing looks wrong. Inside the Wall the flashlight and geometry are visible. The user's
+  memory of the real mission for that room: dark until the lights come on, Fallen seen in the
+  distance, and the gate to the rifle (Khvostov) is one you normally walk through - here it is
+  shut with a Dreg behind it. = the room is in its unscripted initial state (section 45/49).
