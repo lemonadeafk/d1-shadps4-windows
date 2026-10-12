@@ -1082,3 +1082,27 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   death camera, respawn with square) - Desktop\GUARDIAN-DOWN-killed-by-dreg.png.
 - Timings are mine, not the mission's: the real triggers (player reaches pt_* volumes) are not
   read yet, and the Ghost itself is still not at the player's side.
+
+## 55. The Ghost in the Wall: where it is and what drives it (2026-10-11 21:30, runs GH1/GH2)
+- Spawning only member sub 95 (sq_nux_ghost__ghost) in the quiet room: the Ghost is a BIPED
+  object (sobject idx 2, def 0x80AAE367) hovering at (390.5, -787.0, 18.9) - 2.4 m in front of
+  the spawn point, 1.5 m up, a friendly blue dot on the radar - but it is not drawn.
+- Actor table for performances = pool [0x25BECD0] (stride 0x2AC0): +0x1C definition tag
+  (Ghost: 0x80CC39B9), +0x34 actor handle (= member rec+0x218), +0x38 object handle, +0x60
+  performance sensor handle. The Ghost's definition lists exactly ONE performance:
+  0x716A1D9B. Served {A = 716a1d9b, sequence 1} on nux_ghost (kind 40, sub 125;
+  capture\values\ghost_perf.bin): the value arrives; no visible change.
+- ho_ghostlight (kind 24, value 0x8080065C = {bool on, u32 sequence, name ref, typed selector}),
+  update FUN_00122810: with a valid name ref it walks the object set of the referenced record
+  (FUN_00126DC0 - the kind-33 record, of_ghostlight), otherwise the set built from its own typed
+  selector (FUN_00116AE0); FUN_00123030(rec, object) for each. Its definition names object
+  0x80A3D304 (the light). Selector types = table [0x25BE898], 13 entries: 0x808008F2 = the
+  players (2-bit mode), 0x8080091D = a squad member by name ref (-> actor -> object),
+  0x808005F2 / 6D7 / 6E5 / 7FA / 46E = other name refs, 952 / 84F / 6F0 / 42E / 96E / 623 = a
+  hash or number.
+- A name ref to the wrong kind of record CRASHES the game (0xc0000005 at eboot 0x126A57:
+  member sub 95 given to ho_ghostlight). Tried without visible effect: players selector modes
+  0-2 (applied: rec+0x210 = sequence, +0x218 = 5), and ref -> of_ghostlight with its default
+  (empty) value. NEXT: of_ghostlight's own value (0x80800750: count + typed selectors) should
+  name the Ghost member; then ho_ghostlight -> of_ghostlight.
+- tools\held_object.py sends kind-24 values.
