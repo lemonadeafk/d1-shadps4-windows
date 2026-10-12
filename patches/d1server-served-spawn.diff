@@ -1038,15 +1038,16 @@ index 0000000..4080659
 +}
 diff --git a/d1-server/crates/d1-oracle/examples/sensor_frame.rs b/d1-server/crates/d1-oracle/examples/sensor_frame.rs
 new file mode 100644
-index 0000000..c0433e2
+index 0000000..4de2f4d
 --- /dev/null
 +++ b/d1-server/crates/d1-oracle/examples/sensor_frame.rs
-@@ -0,0 +1,66 @@
+@@ -0,0 +1,79 @@
 +// Build one udt-5 sensor_auth_update payload that sets values on named sensor slots.
 +//
 +//   sensor_frame <world tag> <bubble> <out file> <entry>...
 +//   entry = <group hash>:<sub>:<value image hex>     (kind, value tag and part 2 come from content)
 +//   entry = <group hash>:<sub>                       (default-init only)
++//   entry = @<file>                                  (entries, one per line)
 +//
 +// The frame also carries the lifetime phase entry (phase 3, same value the host already sent), so
 +// it is a valid frame on its own. Drop the output into the activity host's
@@ -1066,7 +1067,19 @@ index 0000000..c0433e2
 +    let w = d1_oracle::world_sensors::derive_cached(hex(&a[0]), a[1].parse().expect("bubble")).expect("derive");
 +    let life = w.lifetime().expect("the world has a lifetime record");
 +    let mut init = Vec::new();
++    // `@<file>` = one entry per line (a Windows command line holds ~32 K characters; 45 squad
++    // member values do not fit).
++    let mut entries: Vec<String> = Vec::new();
 +    for e in &a[3..] {
++        match e.strip_prefix('@') {
++            Some(path) => entries.extend(
++                std::fs::read_to_string(path).expect("entry file").lines().map(str::trim)
++                    .filter(|l| !l.is_empty()).map(String::from),
++            ),
++            None => entries.push(e.clone()),
++        }
++    }
++    for e in &entries {
 +        let f: Vec<&str> = e.split(':').collect();
 +        let (hash, sub) = (hex(f[0]), f[1].parse::<i16>().expect("sub"));
 +        let slot = w
