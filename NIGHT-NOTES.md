@@ -1106,3 +1106,11 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   (empty) value. NEXT: of_ghostlight's own value (0x80800750: count + typed selectors) should
   name the Ghost member; then ho_ghostlight -> of_ghostlight.
 - tools\held_object.py sends kind-24 values.
+- 21:45 (run GH4): THE GHOST IS VISIBLE - Desktop\GHOST-visible-in-the-Wall.png. Spawning member
+  sub 95 alone puts the Ghost shell in front of the gate (bottom of the view when facing it);
+  right after the spawn it shines a bright light at the player (GHOST-light-shining.png, lens
+  flare + dust motes). of_ghostlight (kind 33, value 0x80800750 = 4-bit count + 8 x 0x30-byte
+  typed selectors at +0x10) given one selector {0x8080091D, name ref fc0e45a3:2:95} and
+  ho_ghostlight {on, seq, ref -> fc0e45a3:33:124}: no crash; the flare went out and the shell is
+  plainly visible. Earlier "invisible Ghost" = I was looking above it in a room that was black.
+- mission_director "wall" now spawns the Ghost first, the rest of the squads later.
