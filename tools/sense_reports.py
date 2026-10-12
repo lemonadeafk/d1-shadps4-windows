@@ -15,7 +15,9 @@ import sys
 import time
 
 WORLD = "80cb800d"
-LINE = re.compile(r"(\d\d:\d\d:\d\d)\.\d+Z.*CAPTURED udt 6 .*payload: ([0-9a-f]+)")
+# udt 6 = sensor_sense_update; udt 18 = incident: sent while the player stands in an ENABLED
+# player trigger (kind 29), carrying the same kind of name ref (section 62).
+LINE = re.compile(r"(\d\d:\d\d:\d\d)\.\d+Z.*CAPTURED udt (?:6|18) .*payload: ([0-9a-f]+)")
 
 
 def slots(bubble, world=WORLD):

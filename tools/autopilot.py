@@ -94,7 +94,7 @@ DESTINATIONS = {
              "D1_AH_SENSOR_KIND_VALUE=2:0x80800868:" + os.path.join(ROOT, "capture", "values", "member_exists.bin")
              + ",4:0x808007d9:" + os.path.join(ROOT, "capture", "values", "object_exists.bin"),
              "D1_AH_SENSOR_KIND_RESEQ=4", "D1_AH_SENSOR_KIND_SKIP=2@3", "D1_AH_SENSOR_FOLLOW_MAX=3",
-             "D1_AH_SENSOR_REPEAT_MAX=8"],
+             "D1_AH_SENSOR_REPEAT_MAX=3"],
         launch="launch_patrol.py"),
     # The Wall with its scripted objects but NO squads: a quiet room for object-state tests.
     "guardian_rises_b3_quiet": dict(

@@ -1,4 +1,4 @@
-r"""Play the mission's scripted sequences (Ghost dialogue, music cues) from the server side.
+﻿r"""Play the mission's scripted sequences (Ghost dialogue, music cues) from the server side.
 
     python tools\mission_director.py [--bubble 3] [--script wall]
 
@@ -98,6 +98,12 @@ _WALL = [
     (2, "spawn", BREACH, "the Fallen arrive"),
     _line(6, 20, "o2_95"),
 ]
+# (group, kind, sub) cues the game reports on the way in
+_PM_IN_WALL = (ACTIVITY, 28, 33)
+_T_ENTER = (ACTIVITY, 29, 30)           # cosmo_m0_phase00_highway.obj_m0_phase00_m1._player_trigger
+_T_IN_WALL_2 = (DIALOGUE, 29, 46)       # pt_in_wall_2
+_T_FALLEN_ABOVE = (DIALOGUE, 29, 47)    # pt_fallen_above
+_IN_BREACH = (BREACH, 4, 0)             # the Wall room's first scripted object: we are in its area
 SCRIPTS = {
     # started inside the Wall (the "inside the Wall" launcher)
     "wall": [(0, "objective", 7, ACTIVE, "objective: FIND A WEAPON")] + _WALL,
@@ -110,15 +116,26 @@ SCRIPTS = {
         (7, "objective", 3, ACTIVE, "objective: ENTER THE WALL"),
         _line(2, 3, "o1_10"),
         _line(7, 4, "o1_15"),
-        (0, "wait", ACTIVITY, 28, 33, 4 * 3600, "pm_in_wall (the stairs at the Wall's foot)"),
-        _line(0, 6, "o1_20b"),
-        (0, "wait", BREACH, 4, 0, 4 * 3600, "the player walks into the Wall"),
-        (16, "objective", 3, HIDDEN, "ENTER THE WALL done"),
+        # The way in, cued by what the game reports (positions from the trigger log, run TRIG1).
+        # Each wait also ends on any LATER cue, so a player who was past a trigger before it
+        # was armed cannot stall the script.
+        (0, "wait_any", [_PM_IN_WALL, _T_ENTER, _T_IN_WALL_2, _T_FALLEN_ABOVE, _IN_BREACH],
+         "pm_in_wall: the stairs at the Wall's foot (329, -821)"),
+        _line(0, 5, "o1_20"),
+        (0, "wait_any", [_T_ENTER, _T_IN_WALL_2, _T_FALLEN_ABOVE, _IN_BREACH],
+         "obj_m0_phase00_m1 trigger: into the Wall's corridor (317, -820)"),
+        (0, "objective", 3, HIDDEN, "ENTER THE WALL done"),
         (1, "objective", 7, ACTIVE, "objective: FIND A WEAPON"),
-        (1, "seq", DIALOGUE, 34, "seq_fallen_scream_mid"),
+        (0, "wait_any", [_T_IN_WALL_2, _T_FALLEN_ABOVE, _IN_BREACH], "pt_in_wall_2: top of the inner stairs (326, -797)"),
+        _line(0, 6, "o1_20b"),
+        (0, "wait_any", [_T_FALLEN_ABOVE, _IN_BREACH], "pt_fallen_above (332, -797)"),
+        (0, "seq", DIALOGUE, 34, "seq_fallen_scream_mid"),
+        (0, "wait_any", [_IN_BREACH], "the Wall's own area (the host switches to it)"),
+        # the host's frames for the new area (3 x 5 s) put every value back to its default
+        (16, "objective", 7, ACTIVE, "objective: FIND A WEAPON (again, after the area switch)"),
     ] + _WALL,
 }
-SETTLE = {"wall": 50, "mission": 50}     # seconds after in_world before the first step
+SETTLE = {"wall": 18, "mission": 18}     # seconds after in_world before the first step
 
 
 def sequence_value(counter, start=0):
@@ -174,6 +191,76 @@ def wait_incident(run, offset, timeout):
     return False
 
 
+def player_position():
+    """The local player's position, read from the game (a diagnostic read, nothing written)."""
+    try:
+        import contextlib
+        import io
+        from d1guest_win import d1guest
+        ns = argparse.Namespace(symbols=d1guest.SYMBOLS, eboot=None, ignore_build_gate=False, full_scan=False,
+                                no_cache=False, allow_dead=True, account_soid=None, require=0)
+        with contextlib.redirect_stdout(io.StringIO()):
+            _, _, proc, g = d1guest.open_guest(ns)
+        pool = g.base + 0x26795E0
+        elems = struct.unpack("<Q", proc.read(pool + 8, 8))[0]
+        return struct.unpack("<3f", proc.read(elems + 0xE0, 12))
+    except Exception:
+        return None
+
+
+def trigger_logger(run, bubble):
+    """Arm every player trigger (kind 29) of the area and write down each one the game fires.
+
+    Triggers are disabled until the server enables them; an enabled one makes the game send an
+    incident for as long as the player stands in it, so each is disarmed at its first report.
+    <run>\\trigger-log.txt gets time, record name and the player's position - one playthrough
+    then shows where every trigger of the mission sits and in which order they come.
+    The host's frames after an area switch reset the values, so everything is re-armed 17 s
+    after the game first reports the Wall's own records.
+    """
+    import json
+    import sense_reports
+    names = json.load(open(os.path.join(os.path.dirname(HERE), "capture", "values", "record_names_b3.json")))
+    known = sense_reports.slots(bubble, WORLD[2:])
+    # NOT pt_bubble (the Wall's sub 105): armed, it fires in the corridor (x ~355) and the game
+    # dies within a second (render job, 0xBBDEDE; runs TRIG1 / TRIG2 and a live test in TRIG3).
+    unsafe = {(int(BREACH, 16), 105)}
+    triggers = sorted((g, sub) for (g, sub), kind in known.items() if kind == 29 and (g, sub) not in unsafe)
+    watcher = sense_reports.Watcher(run, bubble, WORLD[2:])
+    out = open(os.path.join(run, "trigger-log.txt"), "a", encoding="utf-8")
+
+    def arm(which, on=True):
+        value = "0100000001000000" if on else "0000000000000000"
+        for i in range(0, len(which), 12):       # a few per frame keeps the frames small
+            inject_sensor.inject(bubble, ["%#x:%d:%s" % (g, sub, value) for g, sub in which[i:i + 12]], world=WORLD)
+
+    def note(text):
+        out.write("%s %s\n" % (time.strftime("%H:%M:%S"), text))
+        out.flush()
+
+    arm(triggers)
+    note("armed %d triggers" % len(triggers))
+    fired, rearm_at, in_wall = set(), None, False
+    while os.path.isdir(run):
+        for when, group, kind, sub, body in watcher.poll():
+            key = "%08x:%d:%d" % (group, kind, sub)
+            if kind == 4 and group == int(BREACH, 16) and sub == 0 and not in_wall:
+                in_wall, rearm_at = True, time.time() + 17
+            if kind == 29 and (group, sub) not in fired:
+                fired.add((group, sub))
+                arm([(group, sub)], False)
+                pos = player_position()
+                note("TRIGGER %s %s at %s" % (key, names.get(key, "?"), "(%.1f, %.1f, %.1f)" % pos if pos else "?"))
+            elif kind == 28 and body[:4] == "1111":
+                pos = player_position()
+                note("REGION  %s %s at %s" % (key, names.get(key, "?"), "(%.1f, %.1f, %.1f)" % pos if pos else "?"))
+        if rearm_at and time.time() > rearm_at:
+            rearm_at = None
+            arm([t for t in triggers if t not in fired])
+            note("re-armed after the area switch")
+        time.sleep(0.5)
+
+
 def main():
     armed_at = 0
     ap = argparse.ArgumentParser()
@@ -181,6 +268,7 @@ def main():
     ap.add_argument("--script", default="wall", choices=sorted(SCRIPTS))
     ap.add_argument("--counter", type=int, default=1)
     ap.add_argument("--no-wait", action="store_true")
+    ap.add_argument("--no-trigger-log", action="store_true", help="do not arm and log the game's player triggers")
     a = ap.parse_args()
     run = newest_run()
     if not a.no_wait:
@@ -188,13 +276,18 @@ def main():
         if not run:
             raise SystemExit("the game never reached in_world")
         print("in world:", os.path.basename(run))
-        time.sleep(SETTLE[a.script])  # let the host's arrival frames and their repeats finish first
+        # let the host's arrival frames and their repeats finish first (they would overwrite
+        # the script's values); MISSION_SETTLE overrides for a host with fewer repeats
+        time.sleep(float(os.environ.get("MISSION_SETTLE", SETTLE[a.script])))
     import object_state
     import sense_reports
     watcher = sense_reports.Watcher(run, a.bubble, WORLD[2:], history=True)
     os.environ["D1_ORACLE_EXTRA_TAGS"] = "%#x,%#x" % (object_state.STATE_TAG, OBJECTIVE_TAG)
     objective = open(os.path.join(os.path.dirname(HERE), "capture", "values", "objective_default.bin"), "rb").read()
     seq = 100                       # scripted-object sequence numbers only ever rise
+    if not a.no_trigger_log:
+        import threading
+        threading.Thread(target=trigger_logger, args=(run, a.bubble), daemon=True).start()
     for step in SCRIPTS[a.script]:
         delay, kind = step[0], step[1]
         time.sleep(delay)
@@ -203,9 +296,20 @@ def main():
             hit = watcher.wait(int(group, 16), wkind, sub, timeout)
             print(time.strftime("%H:%M:%S"), name, "reported by the game" if hit else "not reported in %d s - going on" % timeout, flush=True)
             continue
+        if kind == "wait_any":
+            _, _, cues, name = step
+            want = {(int(g, 16), k, s) for g, k, s in cues}
+            hit = None
+            while hit is None:
+                hit = next((r for r in watcher.seen if r[1:4] in want), None)
+                if hit is None:
+                    watcher.poll()
+                    time.sleep(0.5)
+            print(time.strftime("%H:%M:%S"), name, "- reported by the game (%08x %d:%d)" % hit[1:4], flush=True)
+            continue
         if kind == "incident":
             _, _, timeout, name = step
-            hit = wait_incident(run, armed_at, timeout)
+            hit = watcher.wait(int(ACTIVITY, 16), 29, 35, timeout)     # obj_get_weapon's trigger
             print(time.strftime("%H:%M:%S"), name, "reported by the game" if hit else "not reported in %d s - going on" % timeout, flush=True)
             continue
         if kind == "loadout":
@@ -251,6 +355,10 @@ def main():
             entries = ["%s:%s:%s" % (group, sub, img) for sub in subs.split(",")]
         ok = inject_sensor.inject(a.bubble, entries, world=WORLD)
         print(time.strftime("%H:%M:%S"), name, "sent" if ok else "NOT picked up", flush=True)
+    if not a.no_trigger_log:        # keep logging triggers for as long as this run is the current one
+        print(time.strftime("%H:%M:%S"), "script done; still logging triggers to trigger-log.txt", flush=True)
+        while newest_run() == run and os.path.isdir(run):
+            time.sleep(5)
 
 
 if __name__ == "__main__":

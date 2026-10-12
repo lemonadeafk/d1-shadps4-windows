@@ -1491,3 +1491,38 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   equip_service still assumes the served Hunter's inventory folder; whether a level-1
   character gets the "A Guardian Rises" node; subclass nodes are the full default set, not a
   fresh character's.
+
+## 70. Trigger log, the corridor crash explained, faster start (2026-10-12 15:00, runs TRIG1-4, FASTW)
+- Pushed to GitHub at 6b66a57 on the user's "push" (everything after is local again).
+- INCIDENTS NAME THEIR TRIGGER: a udt-18 incident carries the same 55-bit name ref as a sense
+  update (group hash, kind + 1, sub + 0x8000); tools\sense_reports.py now reads both, so a fired
+  player trigger shows up as a kind-29 report.
+- TRIGGER LOG: mission_director.py arms every kind-29 trigger of the area after the settle time
+  and writes <run>\trigger-log.txt: time, record name and the player's position (read from the
+  game - a diagnostic read) for each trigger and each pm_ region the game reports; fired triggers
+  are disarmed; everything is re-armed 17 s after the area switch. One playthrough = a map of
+  the mission's cues. Record names: capture\values\record_names_b3.json (from the content dump).
+  First entries (highway -> Wall corridor): pt_ab / pt_ab_1 at the spawn (328.6,-829.5);
+  pm_in_wall (328.8,-821.5); obj_m0_phase00_m1._player_trigger (317.1,-819.6) = stepping into
+  the Wall = ENTER THE WALL is done; pt_in_wall_2 (326.5,-796.7); pt_fallen_above (332,-796.7).
+- THE CORRIDOR CRASH: 0xc0000005 at 0xBBDEDE again, twice in a row, and the new caller log
+  shows a RENDER JOB (job thread -> 0xAE18C0 -> FUN_00B9D650 -> 0xBB38D0 -> 0xB51EB0 ->
+  FUN_00B51FE0 -> device vtbl+0x98 with a data pointer of 0x4F taken from the render resource
+  table 0x2869CA8, 0x80-byte entries, index = i16 at ctx + handle*6 + 0xB4 - consistent with an
+  index of -1). CAUSE of these two: the Wall's trigger sub 105 `pt_bubble`. Armed, it fires in
+  the corridor (x ~355) and the game dies within a second: reproduced on demand in a live
+  session (armed only the Wall group's triggers, walked 352 -> 362: incident for 105, dead);
+  with it left disarmed the same walk survives (TRIG3 without any, TRIG4 with the other 44).
+  The logger never arms it. The two crashes of the night before (HWY2, MIS3) had no trigger
+  armed - same address, cause still unknown.
+- "mission" script: the way in is now cued by those reports (wait_any: each wait also ends on
+  any later cue): pm_in_wall -> o1_20; the obj trigger -> ENTER THE WALL off, FIND A WEAPON on;
+  pt_in_wall_2 -> o1_20b; pt_fallen_above -> scream; the Wall's area -> +16 s the room script.
+  The rifle step waits on the trigger's own report instead of "any incident".
+- FASTER START: D1_AH_SENSOR_REPEAT_MAX 8 -> 3 and the script's settle 50 s -> 18 s (both
+  launchers, the mission test destination). TRIG2-4 and FASTW: banner / first objective 18 s
+  after in_world, objects and lights still come up.
+- Still slow: the room's own steps are timed (75 s from the Ghost to the gate). The Ghost lines
+  are at least 12 s long in my recordings (they fill the whole capture window), so they overlap
+  at the present 7 s spacing; the real cue points inside the room need the trigger log from a
+  full playthrough.
