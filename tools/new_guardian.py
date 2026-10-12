@@ -66,26 +66,62 @@ def content_indices():
     return {int(h, 16): int(ci) for h, ci, _ in rows}
 
 
-def build(name, cls, race, gender, custom=None):
+# What a new Guardian owns (content indices; the item table opens each class's armour block
+# with its starter set - names from tools\game_strings.py items): Titan "Lightmail" + "Mark of
+# the Risen", Hunter "Prototype 0.9" + "Makeshift Scarf", Warlock "Born Spark" + "Potential
+# Bond"; subclass Striker / Gunslinger / Voidwalker; the Khvostov 7G-02; no special, no heavy,
+# no sparrow. Ghost, ship, emote, shader and emblem are the served Hunter's.
+STARTER = {
+    0: {"Subclass": 710, "Helmet": 203, "Gauntlets": 197, "Chest Armor": 199, "Leg Armor": 205, "Class Armor": 201},
+    1: {"Subclass": 709, "Helmet": 15, "Gauntlets": 9, "Chest Armor": 11, "Leg Armor": 17, "Class Armor": 13},
+    2: {"Subclass": 713, "Helmet": 391, "Gauntlets": 385, "Chest Armor": 387, "Leg Armor": 393, "Class Armor": 389},
+}
+STARTER_ORDER = ["Subclass", "Primary Weapons", "Ghost", "Helmet", "Gauntlets", "Chest Armor", "Leg Armor",
+                 "Class Armor", "Ships", "Emotes", "Shaders", "Emblems"]
+BASE_SOID = 0xD100000000000301          # the element in file NN carries SOID BASE_SOID + NN
+
+
+def stage(inv, items):
+    """Write items = [(bucket, content index or None)] as element files 00.., from the served
+    Hunter's element of the same bucket, each with the SOID its position requires."""
+    os.makedirs(inv)
+    for n, (bucket, ci) in enumerate(items):
+        src = sorted(glob.glob(os.path.join(TEMPLATE, "*-%s.bin" % bucket)))[0]
+
+        def set_item(b, n=n, ci=ci):
+            struct.pack_into("<Q", b, 0, BASE_SOID + n)
+            if ci is not None:
+                struct.pack_into("<H", b, 0x24, ci)
+        edit(ELEMENT, src, set_item, os.path.join(inv, "%02d-%s.bin" % (n, bucket)))
+
+
+def build(name, cls, race, gender, custom=None, starter=True):
     out = os.path.join(GUARDIANS, name)
     inv = os.path.join(out, "inventory")
     if os.path.isdir(out):
         shutil.rmtree(out)
-    shutil.copytree(TEMPLATE, inv)
-    loadout = json.load(open(os.path.join(fc.REPO, "loadouts", "y1-%s-vault-of-glass.json" % CLASSES[cls]),
-                             encoding="utf-8"))
-    ci_of = content_indices()
-    items = {SLOT_FILE[e["slot"]]: ci_of[e["item"]["hash"]] for e in loadout["equipped"] if e["slot"] in SLOT_FILE}
-    items[SPARE[0]] = SPARE[1]
-    for stem, ci in items.items():
-        edit(ELEMENT, os.path.join(inv, stem + ".bin"), lambda b, ci=ci: struct.pack_into("<H", b, 0x24, ci))
-    run("inventory", "rebuild", "--dir", inv)
+    os.makedirs(out)
+    if starter:
+        level, light, xp = 1, 3, 0
+        gear_items = dict(STARTER[cls], **{"Primary Weapons": SPARE[1]})
+        stage(inv, [(b, gear_items.get(b)) for b in STARTER_ORDER])
+    else:
+        level, light, xp = 40, 385, 400000
+        loadout = json.load(open(os.path.join(fc.REPO, "loadouts", "y1-%s-vault-of-glass.json" % CLASSES[cls]),
+                                 encoding="utf-8"))
+        ci_of = content_indices()
+        items = {SLOT_FILE[e["slot"]]: ci_of[e["item"]["hash"]] for e in loadout["equipped"] if e["slot"] in SLOT_FILE}
+        items[SPARE[0]] = SPARE[1]
+        stage(inv, [(os.path.basename(p)[3:-4], items.get(os.path.basename(p)[:-4]))
+                    for p in sorted(glob.glob(os.path.join(TEMPLATE, "*.bin")))])
+    run("inventory", "rebuild", "--dir", inv, "--level", str(level))
     # the subclass's talent grid (the rebuild derives its index from the item) decides the
     # active nodes and the abilities: tools\talent_grid.py
     grid = []
     edit(ELEMENT, os.path.join(inv, "00-Subclass.bin"), lambda b: grid.append(struct.unpack_from("<H", b, 0x58)[0]))
     active = talent_grid.default_active(grid[0])
-    run("inventory", "rebuild", "--dir", inv, "--subclass-nodes", ",".join(str(n) for n in active))
+    nodes = ["--level", str(level), "--subclass-nodes", ",".join(str(n) for n in active)]
+    run("inventory", "rebuild", "--dir", inv, *nodes)
     # the art table is one file for every served set: write it over all of them
     union = os.path.join(tempfile.gettempdir(), "d1_art_union")
     shutil.rmtree(union, ignore_errors=True)
@@ -96,15 +132,17 @@ def build(name, cls, race, gender, custom=None):
             shutil.copyfile(p, os.path.join(union, "%03d-%s" % (n, os.path.basename(p).split("-", 1)[1])))
             n += 1
     run("art-arrangement", "write", "--inventory", union)
-    run("inventory", "rebuild", "--dir", inv, "--subclass-nodes", ",".join(str(n) for n in active))
+    run("inventory", "rebuild", "--dir", inv, *nodes)
     gear = os.path.join(out, "inventory-gear")       # character / peer view refuse the emblem element
     shutil.copytree(inv, gear, ignore=lambda d, names: [x for x in names if "Emblems" in x])
     ident = "%d,%d,%d" % (race, gender, cls)
     char, prof, roster = os.path.join(out, "char.bin"), os.path.join(out, "profile.bin"), os.path.join(out, "roster")
-    run("character", "build", "--inventory", gear, "--identity", ident, "--out", char)
-    run("profile", "build", "--inventory", inv, "--identity", ident, "--all-content",
-        "--progression", "117:400000", "--out", prof)
-    run("character", "build-peer", "--inventory", gear, "--identity", ident, "--with-family2", "--out-dir", roster)
+    run("character", "build", "--inventory", gear, "--identity", ident, "--level", str(level),
+        "--light", str(light), "--out", char)
+    run("profile", "build", "--inventory", inv, "--identity", ident, "--all-content", "--light", str(light),
+        "--progression", "117:%d" % xp, "--out", prof)
+    run("character", "build-peer", "--inventory", gear, "--identity", ident, "--level", str(level),
+        "--light", str(light), "--with-family2", "--out-dir", roster)
     shutil.rmtree(gear)
     peer = glob.glob(os.path.join(roster, "f0t1-*.bin"))[0]
     saved = fc.FILES, fc.ABILITIES
@@ -134,8 +172,10 @@ def main():
     ap.add_argument("--race", type=int, default=0)
     ap.add_argument("--gender", type=int, default=0)
     ap.add_argument("--custom", help="the 36-byte customization block, hex")
+    ap.add_argument("--geared", action="store_true",
+                    help="level 40 with the class's raid set instead of a level-1 starter")
     a = ap.parse_args()
-    print(build(a.name, a.cls, a.race, a.gender, bytes.fromhex(a.custom) if a.custom else None))
+    print(build(a.name, a.cls, a.race, a.gender, bytes.fromhex(a.custom) if a.custom else None, not a.geared))
 
 
 if __name__ == "__main__":

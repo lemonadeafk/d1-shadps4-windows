@@ -1468,3 +1468,26 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   away from it. Not seen in the mission flow, where the primary is in hand.
 - Open: weapon perks (all "none"), attack / stat 0 for other levels, armour stats
   (Intellect / Discipline / Strength read 0).
+
+## 69. Level 1 with the real starter gear (2026-10-12 14:05, run START1)
+- Item definition +0x88 = bucket id, +0x8A = tier (1 = common ... 5 = exotic, 6, 255). The item
+  table OPENS each class's armour block with its starter set (two copies of every piece; five
+  unnamed pieces before it): Hunter 9 / 11 / 13 / 15 / 17 = Prototype 0.9b gauntlets,
+  0.9r3 chest, Makeshift Scarf, Prototype 0.9c helmet, 0.9b legs; Titan 197 / 199 / 201 /
+  203 / 205 = Lightmail + Mark of the Risen; Warlock 385 / 387 / 389 / 391 / 393 = Born Spark
+  + Potential Bond.
+- new_guardian.py: starter build is now the default (creation uses it): level 1, Light 3
+  (my choice - the real value is not known), XP 0; starter subclass (Striker / Gunslinger /
+  Voidwalker), Khvostov 7G-02, the starter armour, no special / heavy / sparrow / artifact;
+  Ghost, ship, emote, shader, emblem still the served Hunter's. Elements are staged in a new
+  order with the SOID each position requires (BASE + file index). --geared keeps the level-40
+  raid-set build. Item level follows the character (inventory rebuild --level).
+- START1: created a HUNTER (creator default = human female). Character screen: level 1,
+  Light 3, Gunslinger, Khvostov, the white Prototype set and Makeshift Scarf, empty special /
+  heavy / artifact slots (Desktop\CREATED-level-1-hunter-starter-gear.png). Director: only the
+  Tower, the Crucible and Earth are shown - the game's own level gating (level 40 showed every
+  destination); Earth's map nodes look dim. Not launched from there.
+- Open: attack for a level-1 item (weapon_stats' attack formula was fitted at level 40);
+  equip_service still assumes the served Hunter's inventory folder; whether a level-1
+  character gets the "A Guardian Rises" node; subclass nodes are the full default set, not a
+  fresh character's.
