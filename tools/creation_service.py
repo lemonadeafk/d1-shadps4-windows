@@ -69,9 +69,21 @@ def main():
             for stale in (SWAP_TRIGGER, os.path.splitext(SWAP_TRIGGER)[0] + ".done"):
                 if os.path.exists(stale):
                     os.remove(stale)
+            # A new Guardian has no weapon in hand until the first mission hands over the rifle
+            # (tools\mission_director.py pushes the "khvostov" variant then): serve the
+            # "unarmed" variant of it for now. Later launches serve the Guardian as built.
+            import loadout_variant
+            lines = new_guardian.env_lines("created")
+            try:
+                unarmed = loadout_variant.build("unarmed", {"primary": None, "special": None, "heavy": None})
+                loadout_variant.build("khvostov", {"primary": loadout_variant.KHVOSTOV, "special": None, "heavy": None})
+                lines += "D1_ROSTER_DIR=%s\nD1_CHARACTER_FILE=%s\n" % (os.path.join(unarmed, "roster"),
+                                                                    os.path.join(unarmed, "char.bin"))
+            except SystemExit as e:
+                print("variants failed:", e, flush=True)
             tmp = SWAP_TRIGGER + ".tmp"
             with open(tmp, "w") as f:
-                f.write(new_guardian.env_lines("created") + "FAMILIES=0,3,4\nFAMILY4=all\n")
+                f.write(lines + "FAMILIES=0,3,4\nFAMILY4=all\n")
             os.replace(tmp, SWAP_TRIGGER)
             print(time.strftime("%H:%M:%S"), "pushed", flush=True)
         time.sleep(0.3)

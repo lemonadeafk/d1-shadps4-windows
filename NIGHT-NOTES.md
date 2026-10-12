@@ -1555,3 +1555,36 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   hidden by "VALUE(1272) > -1" and would be status 4 with FLAG(3914) and not FLAG(5746) - a
   candidate for "A Guardian Rises", not checked. current.txt was cleared after the tests: the
   launchers serve the default Hunter.
+
+## 72. THE REAL OPENING: creation -> intro film -> the game launches the first mission itself (2026-10-12 17:35, runs PROLOG1-3, OPEN1)
+- The first mission is not a Director node. After character:signin the client enters
+  `character:prologue` (c_world_controller_state_character_prologue_handler, vtable 0x192EF80:
+  enter 0x79F9F0, update 0x79FAE0). Enter: activity = FUN_002646D0(profile) - the first row of
+  the PROLOGUE TABLE (tag at investment-globals +0x28; rows 0x18 = {u16 activity index,
+  unlock expression}) whose expression is true; 0xFFFF = leave the state at once (what every run
+  did until now). The table has ONE row: activity 232 if (NOT FLAG 836) AND FLAG 2837.
+- So: grant unlock FLAG 2837 (D1_UNLOCK_FLAGS, with 836 left unset) and the game does the rest
+  by itself: character:prologue plays the intro film ("THE PLANET MARS"), then setup:matchmaking
+  -> setup:activity_host_setup -> setup:prologue_intro_loading -> setup:orbit_outro ->
+  setup:activity_world_transition -> activity:initial_slice_set_loading -> physics_join ->
+  in_world, in whatever world the activity host names. PROLOG3 / OPEN1: created a character,
+  touched nothing else, ended up on the mission's highway as that level-1 Guardian.
+- Activity numbers: 232 (hash 0x5a6705db) is the prologue's activity = "A Guardian Rises";
+  165, which the mission launcher has been publishing, is "Restoration" (the second mission) -
+  that is why the banner said RESTORATION. The create launcher publishes 232.
+- "Launch Destiny (create a new Guardian).cmd" is now the whole opening: mission world config,
+  D1_EMPTY_ROSTER=1, flag 2837, activity 232, mission_director --script mission (its wait for
+  in_world is 4 h now). creation_service pushes the "unarmed" variant of the new Guardian, so
+  the mission's rifle step hands the Khvostov over. OPEN1 (Warlock): in the world unarmed, open
+  hand with the Ghost, ENTER THE WALL on the HUD (Desktop\OPENING-*.png).
+- A tool that fell out of this: the relocation table (R_X86_64_RELATIVE entries in the raw file
+  from ~0x1A00000, 24 B {target, 8, addend}) gives every class's vtable statically: type name ->
+  typeinfo (name slot - 8) -> vtable (slot + 8) -> functions (scratchpad rela.pkl, 70,682
+  entries). Static pointer searches in the eboot find nothing because of these relocations.
+- NOT RIGHT YET: the mission's own opening scene is skipped - "perform_prologue_intro_playback
+  was skipped due to suppressing cinematics" (FUN_00765070 = the activity selection record's
+  first byte == 1, which the prologue handler itself writes, OR FUN_0078AF50, a session-
+  parameter test; not resolved which). Flag 836 (presumably "prologue done") is never set, so a
+  created Guardian would be sent into the opening again on a launch that grants 2837 - only the
+  create launcher does. The banner text with activity 232 was not captured. Not run: the
+  mission past the highway as a created Guardian.

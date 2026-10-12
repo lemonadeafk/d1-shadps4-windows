@@ -1,4 +1,4 @@
-﻿r"""Play the mission's scripted sequences (Ghost dialogue, music cues) from the server side.
+r"""Play the mission's scripted sequences (Ghost dialogue, music cues) from the server side.
 
     python tools\mission_director.py [--bubble 3] [--script wall]
 
@@ -157,7 +157,7 @@ def newest_run():
     return runs[-1] if runs else None
 
 
-def wait_in_world(timeout=900):
+def wait_in_world(timeout=4 * 3600):     # creating a character first can take a while
     t0 = time.time()
     seen = None
     while time.time() - t0 < timeout:
