@@ -24,11 +24,19 @@ WORLD = "0x80cb800d"            # act_cosmo_m0_highway
 DIALOGUE = "0x3c2f5ed5"         # group of seq_d_* / seq_m_* / seq_fallen_* records
 
 BREACH = "0xfc0e45a3"           # the Wall room's own group (bubble 3)
+ACTIVITY = "0x992bb471"         # activity-wide records: objectives, cinematics, pm_in_wall
+# Objectives (kind 32, value 0x80802A1B, 752 bytes; +0 = a 3-bit state). Subs and their HUD text:
+#   3 ENTER THE WALL, 7 FIND A WEAPON, 11 GRAB THE RIFLE, 14 FIGHT THROUGH THE WALL,
+#   17 FIGHT THROUGH THE FALLEN, 20 FIND THE SHIP, 23 FIND THE SHIP, 26 CLEAR OUT THE FALLEN.
+# State 1 plays the "NEW MISSION" banner, 3 shows the objective on the HUD, 0 hides it.
+HIDDEN, ANNOUNCE, ACTIVE = 0, 1, 3
+OBJECTIVE_TAG = 0x80801932      # a schema the objective value needs registered in the encoder
 
 # Steps: (seconds after the previous step, kind, ...)
 #   ("seq", group, sub, name)                       play a kind-5 sequence
 #   ("state", group, subs, (ch0, ch1, ch2), name)   scripted-object state channels (0..1)
 #   ("gone", group, subs, name)                     remove scripted objects
+#   ("objective", sub, state, name)                 a mission objective's HUD state
 #   ("wait", group, kind, sub, timeout, name)       until the GAME reports that record (udt 6), or timeout
 #   ("perf", group, sub, value file, name)          start an actor's performance (kind-40 sensor)
 #   ("spawn", group, name[, subs])                  squad members get their actors (all, or the listed subs)
@@ -60,9 +68,18 @@ SCRIPTS = {
 # game starts reporting the Wall's own records (= the player has walked in and the host has
 # switched to that bubble); then the Wall sequence plays. 16 s = the host's follow-up frames
 # (D1_AH_SENSOR_FOLLOW_MAX=3) are over, so they cannot overwrite the script's values.
-SCRIPTS["mission"] = [(0, "wait", BREACH, 4, 0, 4 * 3600, "the player walks into the Wall"),
-                      (16, "seq", DIALOGUE, 34, "seq_fallen_scream_mid")] + SCRIPTS["wall"]
-SETTLE = {"wall": 50, "mission": 0}      # seconds after in_world before the first step
+SCRIPTS["mission"] = [(0, "objective", 3, ANNOUNCE, "NEW MISSION - Restoration"),
+                      (7, "objective", 3, ACTIVE, "objective: ENTER THE WALL"),
+                      (0, "wait", BREACH, 4, 0, 4 * 3600, "the player walks into the Wall"),
+                      (16, "objective", 3, HIDDEN, "ENTER THE WALL done"),
+                      (1, "objective", 7, ACTIVE, "objective: FIND A WEAPON"),
+                      (1, "seq", DIALOGUE, 34, "seq_fallen_scream_mid")]
+for _step in SCRIPTS["wall"]:
+    SCRIPTS["mission"].append(_step)
+    if _step[-1] == "gate opens":
+        SCRIPTS["mission"] += [(1, "objective", 7, HIDDEN, "FIND A WEAPON done"),
+                               (1, "objective", 11, ACTIVE, "objective: GRAB THE RIFLE")]
+SETTLE = {"wall": 50, "mission": 50}     # seconds after in_world before the first step
 
 
 def sequence_value(counter, start=0):
@@ -122,7 +139,8 @@ def main():
     import object_state
     import sense_reports
     watcher = sense_reports.Watcher(run, a.bubble, WORLD[2:])
-    os.environ["D1_ORACLE_EXTRA_TAGS"] = hex(object_state.STATE_TAG)
+    os.environ["D1_ORACLE_EXTRA_TAGS"] = "%#x,%#x" % (object_state.STATE_TAG, OBJECTIVE_TAG)
+    objective = open(os.path.join(os.path.dirname(HERE), "capture", "values", "objective_default.bin"), "rb").read()
     seq = 100                       # scripted-object sequence numbers only ever rise
     for step in SCRIPTS[a.script]:
         delay, kind = step[0], step[1]
@@ -132,7 +150,10 @@ def main():
             hit = watcher.wait(int(group, 16), wkind, sub, timeout)
             print(time.strftime("%H:%M:%S"), name, "reported by the game" if hit else "not reported in %d s - going on" % timeout, flush=True)
             continue
-        if kind == "seq":
+        if kind == "objective":
+            _, _, sub, state, name = step
+            entries = ["%s:%d:%s" % (ACTIVITY, sub, (bytes([state]) + objective[1:]).hex())]
+        elif kind == "seq":
             _, _, group, sub, name = step
             entries = ["%s:%d:%s" % (group, sub, sequence_value(a.counter))]
         elif kind == "perf":

@@ -1196,3 +1196,24 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   value on perf_ghost (ecf574b5 sub 30) but does not move: its path must come from somewhere
   else (o_ghost_ab / _bc / _c guide objects?). Open.
 - Seen once near the Wall's foot: a night sky with a green aurora instead of the sunset. Open.
+
+## 59. MISSION OBJECTIVES ARE SERVED (2026-10-11 23:55, runs OBJ1 / MIS2)
+- Objective records = kind 32 in the activity-wide group 992bb471, value 0x80802A1B (752 B,
+  0x1xx "per-field" kinds), stored at rec+0x1B0. The encoder needed schema 0x80801932 (an 8-byte
+  u64 struct one of the fields points at) registered: D1_ORACLE_EXTRA_TAGS=0x80801932; without it
+  the game's own encoder walks an unseeded descriptor (READ_UNMAPPED at 0x105B74A).
+- Field +0 (3 bits) is the HUD state. Measured with the record's default image
+  (capture\values\objective_default.bin) and only that byte changed:
+    1 = the "NEW MISSION / RESTORATION" banner, 3 = objective shown on the HUD ("... for
+    details"; it fades after a few seconds like the real game and stays listed in Nav Mode with
+    its description), 0 = hidden. 2, 6, 7 look like 3; 4, 5 show the title without the hint.
+- The eight objectives (sub -> text): 3 ENTER THE WALL, 7 FIND A WEAPON, 11 GRAB THE RIFLE,
+  14 FIGHT THROUGH THE WALL, 17 FIGHT THROUGH THE FALLEN, 20 FIND THE SHIP, 23 FIND THE SHIP,
+  26 CLEAR OUT THE FALLEN. Desktop\OBJECTIVE-*.png.
+- A value sent while the host's arrival repeats are still running is overwritten by the next
+  repeat (default image) - same rule as the scripted objects. Mission config: REPEAT_MAX=8.
+- mission_director "objective" step; the mission script now: 50 s after in_world NEW MISSION
+  banner -> ENTER THE WALL -> (player walks in, reported by the game) -> FIND A WEAPON -> Wall
+  sequence -> gate opens -> GRAB THE RIFLE ("Use the rifle to defend yourself from the
+  encroaching Fallen." in Nav Mode, Desktop\MISSION-objective-grab-the-rifle.png) -> Fallen.
+  Run MIS2 end to end from a fresh launch, walked by the test walker: every step sent, no crash.
