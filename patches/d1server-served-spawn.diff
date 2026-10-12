@@ -36,14 +36,14 @@ index ba405fc..08c627d 100644
 +    }
  }
  
- // ── the oracle worker ────────────────────────────────────────────────────────────────────────────
+ // ?? the oracle worker ????????????????????????????????????????????????????????????????????????????
 @@ -120,6 +132,7 @@ pub trait AhWireCodec: Send + Sync {
  enum Job {
      Encode { udt: u32, image: Vec<u8>, reply: Sender<Result<Vec<u8>, String>> },
      Decode { udt: u32, wire: Vec<u8>, reply: Sender<Result<Vec<u8>, String>> },
 +    DecodeSeeded { udt: u32, wire: Vec<u8>, seed: Vec<u8>, reply: Sender<Result<Vec<u8>, String>> },
      StructSize { udt: u32, reply: Sender<Result<Vec<u8>, String>> },
-     /// ⭐⭐ Build the bespoke udt-5 `sensor_auth_update` frame. Runs on the oracle thread because
+     /// ?? Build the bespoke udt-5 `sensor_auth_update` frame. Runs on the oracle thread because
      /// [`d1_oracle::sensor`] uses `ObjectOracle` (Unicorn, `!Send`).
 @@ -165,6 +178,13 @@ impl OracleWorker {
                                  .map_err(|e| e.to_string());
@@ -77,16 +77,16 @@ index ba405fc..08c627d 100644
 +    }
  }
  
- /// ⭐ Inbound ids this Activity Host **deliberately does not decode**, with the reason - so the run
+ /// ? Inbound ids this Activity Host **deliberately does not decode**, with the reason - so the run
 diff --git a/d1-server/crates/d1-activity-host/src/listener.rs b/d1-server/crates/d1-activity-host/src/listener.rs
-index c535359..61e1134 100644
+index c535359..90d9e6a 100644
 --- a/d1-server/crates/d1-activity-host/src/listener.rs
 +++ b/d1-server/crates/d1-activity-host/src/listener.rs
 @@ -151,6 +151,9 @@ pub struct AhConnection {
      /// host is no longer saying anything the client can act on, and the run should be read as
      /// **truncated**, not as a protocol result.
      pub codec_faults: usize,
-+    /// ⭐ The client's own authoritative state (udt 21) as the client holds it: each update is a
++    /// ? The client's own authoritative state (udt 21) as the client holds it: each update is a
 +    /// replicated delta (only dirty fields, mask `ac+0x6B88`), so it is decoded on top of this.
 +    authoritative_image: Vec<u8>,
  }
@@ -124,7 +124,7 @@ index c535359..61e1134 100644
              });
              events.extend(self.try_push(push));
          }
-+        // ⭐ Injected udt-5 frames (`D1_AH_SENSOR_INJECT_DIR`): the experiment channel.
++        // ? Injected udt-5 frames (`D1_AH_SENSOR_INJECT_DIR`): the experiment channel.
 +        for push in self.instance.injected_due() {
 +            events.push(AhEvent::WantsToPush {
 +                user_defined_type: push.message.user_defined_type(),
@@ -134,25 +134,27 @@ index c535359..61e1134 100644
          let mut out = self.conv.drain(now);
          out.extend(self.pending_pushes.drain(..));
          let sealed = self.seal_all(out, &mut events);
-@@ -508,7 +530,9 @@ impl AhConnection {
+@@ -508,7 +530,11 @@ impl AhConnection {
      /// motivated this, and ten copies of one byte is not ten vectors. The first is the one worth
      /// keeping - it is the one sent from a known state.
      fn capture_once(&mut self, udt: u32, payload: &[u8]) -> Vec<AhEvent> {
 -        if self.captured.insert(udt) {
 +        // udt 6 `sensor_sense_update` is logged EVERY time: it is the client reporting what the
 +        // player does at a sensor (approach / interact), i.e. what the host's script would answer.
-+        if self.captured.insert(udt) || udt == 6 {
++        // udt 18 `incident` likewise: the client sends one when a served player trigger fires
++        // (e.g. the player reaches the rifle), which is the cue the mission script waits for.
++        if self.captured.insert(udt) || udt == 6 || udt == 18 {
              vec![payload_event(udt, payload)]
          } else {
              Vec::new()
-@@ -609,12 +633,20 @@ async fn drive(
+@@ -609,12 +635,20 @@ async fn drive(
      let mut buf: Vec<u8> = Vec::new();
      let mut chunk = [0u8; 8192];
      tracing::info!("AH connection from {peer}");
 +    let mut last_tick = Instant::now();
      loop {
 -        let n = match tokio::time::timeout(poll, sock.read(&mut chunk)).await {
-+        // ⭐ The tick must not depend on the client going quiet: in a mission the client sends
++        // ? The tick must not depend on the client going quiet: in a mission the client sends
 +        // udt-6 sense updates continuously, the read never times out, and the repeat frames and
 +        // injected frames (both driven only from `on_tick`) stopped (run 20261011-135107-WIN-LIGHTS2).
 +        let starved = last_tick.elapsed() >= poll;
@@ -160,14 +162,14 @@ index c535359..61e1134 100644
 +            tokio::time::timeout(poll, sock.read(&mut chunk)).await.map_err(|_| ())
 +        } {
              Ok(r) => r?,
-             // ⭐⭐ Nothing arrived. The client's liveness test is OUR transmit idle time, so this
+             // ?? Nothing arrived. The client's liveness test is OUR transmit idle time, so this
              // is precisely the case that killed run 20260809-054417-RUNG33-BYPASS.
 -            Err(_elapsed) => {
 +            Err(()) => {
 +                last_tick = Instant::now();
                  let (replies, events) = conn.on_tick(Instant::now());
                  for e in events {
-                     // ⭐⭐ The heartbeat path used to print EVERY event at INFO, including the
+                     // ?? The heartbeat path used to print EVERY event at INFO, including the
 diff --git a/d1-server/crates/d1-activity-host/src/main.rs b/d1-server/crates/d1-activity-host/src/main.rs
 index d6bf57f..55df4e9 100644
 --- a/d1-server/crates/d1-activity-host/src/main.rs
@@ -191,7 +193,7 @@ index d6bf57f..55df4e9 100644
 @@ -487,7 +492,9 @@ fn main() -> anyhow::Result<()> {
              // phase (`record+0x1AC`) the player-spawn gate reads. Off unless `D1_AH_SENSOR_PHASE`
              // is set - this is `synthetic-minimal` and its post-pass dispatch is `[U]` until the
-             // live watch on `record+0x1AC` confirms it. ⇒ design/activity-lifetime-state.md.
+             // live watch on `record+0x1AC` confirms it. ? design/activity-lifetime-state.md.
 -            let sensor_payload = match std::env::var("D1_AH_SENSOR_PHASE")
 +            // `bubble = None` is the frame for the bubble the world loads into; `Some(b)` is the
 +            // frame sent when the client transitions into bubble `b` (its groups differ).
@@ -203,7 +205,7 @@ index d6bf57f..55df4e9 100644
                      // client's globals table). The default is the measured in-world pvp_moonbase
                      // group-0 hash; a different map needs `D1_AH_SENSOR_NAME_HASH` set from
                      // `d1-replay sensor-name <snapshot>`. gen must equal the client's `world+0x1D`.
-+                    // ⭐ 2026-10-10: it IS derivable - the name is content. With
++                    // ? 2026-10-10: it IS derivable - the name is content. With
 +                    // `D1_AH_SENSOR_WORLD` the lifetime record's {hash, kind, sub} comes from the
 +                    // world's packages (`d1_oracle::world_sensors`); the three env knobs remain as
 +                    // explicit overrides.
@@ -215,7 +217,7 @@ index d6bf57f..55df4e9 100644
 +                    if let Some(w) = derived {
 +                        if w.checksum != activity_checksum {
 +                            tracing::warn!(
-+                                "⚠ D1_AH_SENSOR_WORLD's record carries checksum {:#010x} but this                                  host publishes {activity_checksum:#010x} - the sensor names are                                  for a different world than the one being served",
++                                "? D1_AH_SENSOR_WORLD's record carries checksum {:#010x} but this                                  host publishes {activity_checksum:#010x} - the sensor names are                                  for a different world than the one being served",
 +                                w.checksum
 +                            );
 +                        }
@@ -245,18 +247,18 @@ index d6bf57f..55df4e9 100644
                          phase,
                          tail,
 +                        init: sensor_init_manifest(bubble, alt),
-+                        // ⭐ `D1_AH_SENSOR_TIME_OF_DAY=<fraction>`: the lifetime value also sets
++                        // ? `D1_AH_SENSOR_TIME_OF_DAY=<fraction>`: the lifetime value also sets
 +                        // the world clock (0.5 = noon); unset = the client's midnight default.
 +                        // Only on arrival: a transition frame must not turn the clock back.
 +                        time_of_day: std::env::var("D1_AH_SENSOR_TIME_OF_DAY")
 +                            .ok()
 +                            .filter(|_| bubble.is_none())
 +                            .and_then(|v| v.trim().parse::<f32>().ok()),
-+                        // ⭐ `D1_AH_SENSOR_AUTHORITY=<peer index>[:<generation>[:<valid 0|1>]]`:
++                        // ? `D1_AH_SENSOR_AUTHORITY=<peer index>[:<generation>[:<valid 0|1>]]`:
 +                        // the sensor authority table entry for that peer (see SensorAuthority).
 +                        authority: std::env::var("D1_AH_SENSOR_AUTHORITY").ok().and_then(|v| {
 +                            let mut it = v.split(':');
-+                            // ⭐ The table is indexed by BUBBLE (the owner index a bubble's own
++                            // ? The table is indexed by BUBBLE (the owner index a bubble's own
 +                            // slots carry at slot+0x60 / record+0x48: 0 in the Tower's start
 +                            // bubble, 3 in the plaza), so each bubble's frame opens its own entry.
 +                            Some(d1_oracle::sensor::SensorAuthority {
@@ -271,12 +273,12 @@ index d6bf57f..55df4e9 100644
                          Ok(bytes) => {
 +                            if !params.init.is_empty() {
 +                                tracing::info!(
-+                                    "⭐ D1_AH_SENSOR_INIT: the frame also brings {} authority sensor slots to their schema default (fresh=1, presence=0) - the client's post-pass waits for every one of them",
++                                    "? D1_AH_SENSOR_INIT: the frame also brings {} authority sensor slots to their schema default (fresh=1, presence=0) - the client's post-pass waits for every one of them",
 +                                    params.init.len()
 +                                );
 +                            }
                              tracing::info!(
-                                 "⭐⭐ D1_AH_SENSOR_PHASE={phase} - armed a udt-5 sensor_auth_update \
+                                 "?? D1_AH_SENSOR_PHASE={phase} - armed a udt-5 sensor_auth_update \
                                   ({} bytes) to write activity lifetime phase {phase} into \
 @@ -551,7 +607,35 @@ fn main() -> anyhow::Result<()> {
                      }
@@ -285,7 +287,7 @@ index d6bf57f..55df4e9 100644
 -            };
 +            } };
 +            let sensor_payload = build_sensor_for(None, false);
-+            // ⭐ `D1_AH_SENSOR_KIND_RESEQ=<kind>[,...]`: those kinds' value+0 is a sequence number
++            // ? `D1_AH_SENSOR_KIND_RESEQ=<kind>[,...]`: those kinds' value+0 is a sequence number
 +            // (kind 4, scripted objects: FUN_001238D0). An ALTERNATE frame with it bumped to 1 is
 +            // built per bubble and every other repeat sends it: a value that changes makes the
 +            // client re-run the setter, which retries creating objects that could not be made on
@@ -294,7 +296,7 @@ index d6bf57f..55df4e9 100644
 +            let reseq = !reseq_kinds().is_empty();
 +            let sensor_alt_payload = if reseq { build_sensor_for(None, true) } else { None };
 +            let mut bubble_sensor_alt_payloads = std::collections::BTreeMap::new();
-+            // ⭐ One frame per bubble, keyed by region id (`bubble * 8`): each bubble loads its own
++            // ? One frame per bubble, keyed by region id (`bubble * 8`): each bubble loads its own
 +            // squad/objective groups, whose slots need initial state and member values when the
 +            // player walks in. Sent by `ActivityInstance::follow_slice_transition`.
 +            let mut bubble_sensor_payloads = std::collections::BTreeMap::new();
@@ -313,7 +315,7 @@ index d6bf57f..55df4e9 100644
 +                }
 +            }
  
-             // ⭐ `D1_AH_SENSOR_REPEAT_S`: re-send the armed sensor frame every N seconds instead of
+             // ? `D1_AH_SENSOR_REPEAT_S`: re-send the armed sensor frame every N seconds instead of
              // once. The once-after-Live send lands during world load before the content record
 @@ -564,6 +648,13 @@ fn main() -> anyhow::Result<()> {
              if let Some(s) = sensor_repeat_s {
@@ -360,7 +362,7 @@ index d6bf57f..55df4e9 100644
      }
  }
 +
-+/// ⭐ `D1_AH_SENSOR_INIT=<file>`: the replicated sensor slots the activity host is authority for,
++/// ? `D1_AH_SENSOR_INIT=<file>`: the replicated sensor slots the activity host is authority for,
 +/// one per line `hash i8 sub part2` (`#` comments). Each goes into the udt-5 frame as a fresh,
 +/// default-state entry ahead of the phase entry: the client only runs the setter post-pass once
 +/// none of these slots is still awaiting its initial state (`FUN_002D0B70`). Measured per world
@@ -378,7 +380,7 @@ index d6bf57f..55df4e9 100644
 +        Ok(path) => match std::fs::read_to_string(&path) {
 +            Ok(t) => (path, t),
 +            Err(e) => {
-+                tracing::error!("⛔ D1_AH_SENSOR_INIT={path}: {e} - sending the phase entry alone");
++                tracing::error!("? D1_AH_SENSOR_INIT={path}: {e} - sending the phase entry alone");
 +                return Vec::new();
 +            }
 +        },
@@ -424,10 +426,10 @@ index d6bf57f..55df4e9 100644
 +                value: None,
 +                no_value_part: false,
 +            }),
-+            _ => tracing::error!("⛔ D1_AH_SENSOR_INIT={path} line {}: want `hash i8 sub part2`", n + 1),
++            _ => tracing::error!("? D1_AH_SENSOR_INIT={path} line {}: want `hash i8 sub part2`", n + 1),
 +        }
 +    }
-+    // ⭐ `D1_AH_SENSOR_PLAYER_SLOT=<sub>[:<owner>]`: that kind-12 player slot (i8 12) is sent with
++    // ? `D1_AH_SENSOR_PLAYER_SLOT=<sub>[:<owner>]`: that kind-12 player slot (i8 12) is sent with
 +    // a real value assigning it to `owner` (default: the profile SOID the BAP side serves,
 +    // 0xD100000000000201) - the activity host's job of seating the player, which the client's
 +    // spawn gate and rung-34 task 9 wait for.
@@ -458,20 +460,20 @@ index d6bf57f..55df4e9 100644
 +                    ),
 +                ));
 +                tracing::info!(
-+                    "⭐ D1_AH_SENSOR_PLAYER_SLOT: player slot sub {} assigned to owner {owner:#018x}",
++                    "? D1_AH_SENSOR_PLAYER_SLOT: player slot sub {} assigned to owner {owner:#018x}",
 +                    e.name_sub
 +                );
 +            }
 +            None => tracing::error!(
-+                "⛔ D1_AH_SENSOR_PLAYER_SLOT={spec}: no i8-12 entry with that sub in the manifest"
++                "? D1_AH_SENSOR_PLAYER_SLOT={spec}: no i8-12 entry with that sub in the manifest"
 +            ),
 +        }
 +    }
-+    // ⭐ `D1_AH_SENSOR_KIND_VALUE=<kind>:<tag>:<image file>[,...]` (experiment): every slot of
++    // ? `D1_AH_SENSOR_KIND_VALUE=<kind>:<tag>:<image file>[,...]` (experiment): every slot of
 +    // that kind is sent with this value image instead of the bare default. Used to probe what a
 +    // record class does with host state - e.g. squad members (kind 2, 0x80800868), whose setter
 +    // FUN_001BE5F0 spawns the actor when value+6 is set and value+5 is 0 or 2 (FUN_001BE9B0).
-+    // ⭐ `D1_AH_SENSOR_KIND_SKIP=<kind>@<bubble>[,...]`: in that bubble the kind keeps its bare
++    // ? `D1_AH_SENSOR_KIND_SKIP=<kind>@<bubble>[,...]`: in that bubble the kind keeps its bare
 +    // default instead of the KIND_VALUE image - e.g. `2@3`: the Wall's squads do not spawn when
 +    // the player walks in; the mission script brings them in on its own cues.
 +    let here = bubble.unwrap_or_else(initial_bubble);
@@ -510,11 +512,11 @@ index d6bf57f..55df4e9 100644
 +                        n += 1;
 +                    }
 +                    tracing::info!(
-+                        "⭐ D1_AH_SENSOR_KIND_VALUE: {n} kind-{kind} slots carry a {}-byte value of {tag:#010x}",
++                        "? D1_AH_SENSOR_KIND_VALUE: {n} kind-{kind} slots carry a {}-byte value of {tag:#010x}",
 +                        image.len()
 +                    );
 +                }
-+                None => tracing::error!("⛔ D1_AH_SENSOR_KIND_VALUE: cannot use `{item}` (want kind:tag:file)"),
++                None => tracing::error!("? D1_AH_SENSOR_KIND_VALUE: cannot use `{item}` (want kind:tag:file)"),
 +            }
 +        }
 +    }
@@ -529,9 +531,9 @@ index d6bf57f..55df4e9 100644
 +        .unwrap_or(0)
 +}
 +
-+/// ⭐ `D1_AH_SENSOR_WORLD=<world record tag>[:<initial bubble>]`: derive the world's sensor slots
++/// ? `D1_AH_SENSOR_WORLD=<world record tag>[:<initial bubble>]`: derive the world's sensor slots
 +/// from its packages (`$D1_PKGDIR`) instead of a measured manifest - the init entries, the
-+/// lifetime record's name and the player slots. Derived once (≈8 s for the Tower).
++/// lifetime record's name and the player slots. Derived once (?8 s for the Tower).
 +fn derived_world_sensors(bubble: Option<usize>) -> Option<&'static d1_oracle::world_sensors::WorldSensors> {
 +    static CELL: std::sync::Mutex<
 +        std::collections::BTreeMap<usize, Option<&'static d1_oracle::world_sensors::WorldSensors>>,
@@ -546,7 +548,7 @@ index d6bf57f..55df4e9 100644
 +        match d1_oracle::world_sensors::derive_cached(tag, bubble) {
 +            Ok(w) => {
 +                tracing::info!(
-+                    "⭐ D1_AH_SENSOR_WORLD={tag:#010x} bubble {bubble}: {} sensor slots in groups {:x?}                      derived from content (checksum {:#010x}, lifetime {:x?})",
++                    "? D1_AH_SENSOR_WORLD={tag:#010x} bubble {bubble}: {} sensor slots in groups {:x?}                      derived from content (checksum {:#010x}, lifetime {:x?})",
 +                    w.slots.len(),
 +                    w.group_hashes,
 +                    w.checksum,
@@ -569,7 +571,7 @@ index 4e17610..1548c4d 100644
          self.blob[Self::CHECKSUM..Self::CHECKSUM + 4].copy_from_slice(&checksum.to_le_bytes());
      }
  
-+    /// ⭐ The region the client starts in, a `u32` at blob `+0x54` (and the hash at `+0x58`).
++    /// ? The region the client starts in, a `u32` at blob `+0x54` (and the hash at `+0x58`).
 +    /// `FUN_0077E440` (the initial-slice-set transition) reads `FUN_002A1F50(world) + 0x54` and
 +    /// starts `transitioning:initial_slice_set` to it; `0` = bubble 0, which is where the Tower
 +    /// starts but not where a mission does ("A Guardian Rises" starts in bubble 14 = region 112).
@@ -586,7 +588,7 @@ index 4e17610..1548c4d 100644
          Ok(())
      }
  
-+    /// ⭐ The whole tabulated array: one record per `(region, token)`, then a `-1` terminator.
++    /// ? The whole tabulated array: one record per `(region, token)`, then a `-1` terminator.
 +    ///
 +    /// The client's matcher `FUN_007775B0` scans this array ONCE per transition (when the
 +    /// transition starts and resets `sstm+0x3B0`) and again only when the membership's member
@@ -636,12 +638,12 @@ index 891ceb8..bc9c169 100644
 --- a/d1-server/crates/d1-activity-host/src/state.rs
 +++ b/d1-server/crates/d1-activity-host/src/state.rs
 @@ -171,6 +171,8 @@ pub struct ActivityInstance {
-     /// ⭐⭐ The activity checksum published at `global_activity_state+0x5C`. `0` reproduces every
+     /// ?? The activity checksum published at `global_activity_state+0x5C`. `0` reproduces every
      /// run to date and is rejected by `FUN_00299100` with `Activity checksum mismatch!`.
      activity_checksum: u32,
 +    /// The region published at `global_activity_state+0x54`: where the client starts.
 +    initial_region: u32,
-     /// ⭐⭐ The bubble count published at `global_activity_state+0x10` (and the `0xFF` unchosen
+     /// ?? The bubble count published at `global_activity_state+0x10` (and the `0xFF` unchosen
      /// bytes at `+0x14`). `FUN_002A0320` runs right after the checksum passes and requires this to
      /// equal the world's scenario bubble count (`orbit` = 16). `0` = every run to date =
 @@ -222,8 +224,29 @@ pub struct ActivityInstance {
@@ -658,7 +660,7 @@ index 891ceb8..bc9c169 100644
 +    sensor_follow_max: Option<u64>,
 +    /// The region the client last reported being in (udt 21 `+0xB8`).
 +    current_region: u32,
-+    /// ⭐ `D1_AH_SENSOR_INJECT_DIR`: every `*.udt5` file that appears here is sent to the client
++    /// ? `D1_AH_SENSOR_INJECT_DIR`: every `*.udt5` file that appears here is sent to the client
 +    /// as one udt-5 `sensor_auth_update` payload and renamed `*.sent`. Built with
 +    /// `d1-oracle` example `sensor_frame`. A live experiment channel - off unless set.
 +    inject_dir: Option<std::path::PathBuf>,
@@ -667,7 +669,7 @@ index 891ceb8..bc9c169 100644
 +    bubble_sensor_payloads: std::collections::BTreeMap<u32, Vec<u8>>,
      /// When the sensor frame last went out (repeat mode pacing).
      sensor_last_sent: Option<Instant>,
-+    /// ⭐ `D1_AH_SENSOR_KIND_RESEQ`: the alternate frame (same slots, bumped sequence in the named
++    /// ? `D1_AH_SENSOR_KIND_RESEQ`: the alternate frame (same slots, bumped sequence in the named
 +    /// kinds' values) sent on every other repeat, for the arrival bubble and per region.
 +    sensor_alt_payload: Option<Vec<u8>>,
 +    bubble_sensor_alt_payloads: std::collections::BTreeMap<u32, Vec<u8>>,
@@ -730,7 +732,7 @@ index 891ceb8..bc9c169 100644
 +                        .and_then(|x| x.strip_prefix("udt"))
 +                        .and_then(|n| n.parse().ok())
 +                        .unwrap_or(5);
-+                    tracing::info!("⭐ injecting {} ({} bytes) as udt-{udt}", f.display(), payload.len());
++                    tracing::info!("? injecting {} ({} bytes) as udt-{udt}", f.display(), payload.len());
 +                    let _ = std::fs::rename(&f, f.with_extension("sent"));
 +                    if udt == 5 {
 +                        self.sensors_sent += 1;
@@ -776,7 +778,7 @@ index 891ceb8..bc9c169 100644
 +        self.sensor_repeat_max = Some(max);
 +    }
 +
-     /// ⭐⭐ The udt-5 `sensor_auth_update`, sent **once** after the instance reaches [`Live`]
+     /// ?? The udt-5 `sensor_auth_update`, sent **once** after the instance reaches [`Live`]
      /// (or on an interval, in [`Self::set_sensor_repeat`] mode).
      ///
 @@ -462,6 +569,11 @@ impl ActivityInstance {
@@ -808,17 +810,17 @@ index 891ceb8..bc9c169 100644
          self.sensors_sent += 1;
 @@ -510,6 +628,7 @@ impl ActivityInstance {
          s.set_activity_index(self.activity_index);
-         // ⭐⭐ The field that aborts rung 33's world transition when it disagrees with content.
+         // ?? The field that aborts rung 33's world transition when it disagrees with content.
          s.set_activity_checksum(self.activity_checksum);
 +        s.set_initial_region(self.initial_region);
-         // ⭐⭐ The bubble count + unchosen bytes that FUN_002A0320 validates right after. Bounded
+         // ?? The bubble count + unchosen bytes that FUN_002A0320 validates right after. Bounded
          // to the 64-byte field; a too-large count is a config error, so publish what we can and let
          // the loud "bubble count mismatch" name a wrong number rather than silently truncating.
 @@ -586,6 +705,23 @@ impl ActivityInstance {
          // the operator reads it; every re-publish after it logs at DEBUG, because a refresh every
          // few seconds repeating the same receipt turns the run log into noise and hides the
          // warnings. The condition is the join/refresh discriminator we already track.
-+        // ⭐ Tabulate ahead (2026-10-10): the record the client is on now, then every bubble's
++        // ? Tabulate ahead (2026-10-10): the record the client is on now, then every bubble's
 +        // region (`bubble * 8`, FUN_0012D6A0) with the NEXT token, which is what the next walk
 +        // into another bubble will carry. See `ReplicateMembership::set_pah_table`.
 +        if let Some((region, peer, token)) = self.pah_region {
@@ -829,8 +831,8 @@ index 891ceb8..bc9c169 100644
 +            }
 +            if table.len() > 1 {
 +                match m.set_pah_table(&table, peer) {
-+                    Ok(()) => tracing::info!("⭐ PAH tabulated regions published (region, token): {table:?}"),
-+                    Err(e) => tracing::warn!("⚠ PAH table NOT published ({e})"),
++                    Ok(()) => tracing::info!("? PAH tabulated regions published (region, token): {table:?}"),
++                    Err(e) => tracing::warn!("? PAH table NOT published ({e})"),
 +                }
 +                return Some(m);
 +            }
@@ -844,7 +846,7 @@ index 891ceb8..bc9c169 100644
              // against, and `43 reservations_failed` is for failures we cannot have.
 -            ClientMessage::ClientAuthoritativeDataUpdate { .. }
 -            | ClientMessage::MembershipAcknowledgement { .. }
-+            // ⭐ …except one thing in it IS a request to the host: the client's pending slice-set
++            // ? ?except one thing in it IS a request to the host: the client's pending slice-set
 +            // transition. Walking into another bubble makes the slice_set_transition_manager pick
 +            // a PENDING region (sstm+0x138) and advance its token (sstm+0x1D0); the client mirrors
 +            // both into this struct (+0x158 = region, 10 bits; +0x1F8 = token, measured live
@@ -880,10 +882,10 @@ index 891ceb8..bc9c169 100644
 +
 +        let current = region_at(CURRENT_REGION);
 +        if current != 0x3FF && current != self.current_region {
-+            tracing::info!("⭐ the client is now in region {current} (was {})", self.current_region);
++            tracing::info!("? the client is now in region {current} (was {})", self.current_region);
 +            self.current_region = current;
 +            if let Some(p) = self.bubble_sensor_payloads.get(&current) {
-+                tracing::info!("⭐ arming the {}-byte sensor frame of region {current}", p.len());
++                tracing::info!("? arming the {}-byte sensor frame of region {current}", p.len());
 +                self.sensor_payload = Some(p.clone());
 +                self.sensor_alt_payload = self.bubble_sensor_alt_payloads.get(&current).cloned();
 +                self.sensor_burst_base = self.sensors_sent;
@@ -899,7 +901,7 @@ index 891ceb8..bc9c169 100644
 +            return Vec::new();
 +        }
 +        tracing::info!(
-+            "⭐ slice-set transition requested: region {region} (PRV{:02}), token {token} -              re-publishing the membership with that PAH tabulated record",
++            "? slice-set transition requested: region {region} (PRV{:02}), token {token} -              re-publishing the membership with that PAH tabulated record",
 +            region
 +        );
 +        self.pah_region = Some((region, peer, token));
@@ -932,7 +934,7 @@ index 0000000..c889617
 --- /dev/null
 +++ b/d1-server/crates/d1-oracle/examples/class_find.rs
 @@ -0,0 +1,12 @@
-+﻿// Entries of a class across packages:   class_find <class hex> <package-name substring>...
++?// Entries of a class across packages:   class_find <class hex> <package-name substring>...
 +fn main() {
 +    let mut a = std::env::args().skip(1);
 +    let class = u32::from_str_radix(a.next().expect("class").trim_start_matches("0x"), 16).unwrap();
@@ -1160,7 +1162,7 @@ index 0000000..27c8121
 --- /dev/null
 +++ b/d1-server/crates/d1-oracle/examples/tagof.rs
 @@ -0,0 +1,12 @@
-+// Print the schema tag behind a runtime-filled `.data` descriptor global (activity_host §2 method).
++// Print the schema tag behind a runtime-filled `.data` descriptor global (activity_host ?2 method).
 +fn main() {
 +    let (image, _) = d1_oracle::harness::Harness::open_default().expect("image");
 +    let index = d1_eboot::descriptors::index(&image).expect("index");
@@ -1215,7 +1217,7 @@ index 443c865..9373d7a 100644
 +    // udt 2 `world_globals_state`: FUN_01057EF0 decodes through *DAT_01902388 into an 8-byte
 +    // local and FUN_002A2270 stores it at world_globals+0x14 with the "received" byte +0x10 = 1.
 +    (2, 0x0190_2388, Some(0x8)),    // world_globals_state      FUN_01057EF0 local_38[8]
-     // ⭐ udt 11 `replicate_membership`. Its handler is `FUN_0029CF50 -> FUN_0029C730`, which states
+     // ? udt 11 `replicate_membership`. Its handler is `FUN_0029CF50 -> FUN_0029C730`, which states
      // the size TWICE and in two different ways - `local_528c = 0x5038` (the buffer size it hands
      // the codec) and `memcpy(image, ac+0xE70, 0x5038)` (the current state it seeds with) - so the
 diff --git a/d1-server/crates/d1-oracle/src/character.rs b/d1-server/crates/d1-oracle/src/character.rs
@@ -1258,7 +1260,7 @@ index 06a7864..fe25b3f 100644
 +            trace: std::env::var_os("D1_HARNESS_TRACE").map(|_| std::collections::VecDeque::new()),
          }));
  
-         // ── THE ONE CODE HOOK ────────────────────────────────────────────────────────────────────
+         // ?? THE ONE CODE HOOK ????????????????????????????????????????????????????????????????????
 @@ -248,6 +252,17 @@ impl Harness {
              let stub = {
                  let mut s = hs.borrow_mut();
@@ -1324,7 +1326,7 @@ index c219d4f..96407f3 100644
      ("Ships", 0x0C),
      ("Vehicle", 0x0D),
      ("Ghost", 0x0E),
-+    // ⭐ The five count-10 buckets, DETERMINED 2026-10-11 from content: every item definition
++    // ? The five count-10 buckets, DETERMINED 2026-10-11 from content: every item definition
 +    // states its bucket id at `def+0x88` (The Last Word 0x02, Praedyth's Revenge 0x03, Bladedancer
 +    // 0x06 - the known rows agree), and each equipped ordinal's items all name one bucket:
 +    // ordinal 12 (emblems, 242 items) -> 0x19, 13 (emotes, 125) -> 0x1B, 14 (shaders, 142, the
@@ -1337,7 +1339,7 @@ index c219d4f..96407f3 100644
 +    ("Artifacts", 0x24),
  ];
  
- /// ⛔ **Materials** - bucket `0x05`, slots 0-19. Every item this project has ever shipped landed
+ /// ? **Materials** - bucket `0x05`, slots 0-19. Every item this project has ever shipped landed
 @@ -322,6 +333,9 @@ pub struct ItemSpec {
      pub progression_ordinal: u16,
      /// `+0x58`. Default [`EMPTY_INDEX`].
@@ -1352,7 +1354,7 @@ index c219d4f..96407f3 100644
      pub item_hash: u32,
  }
  
-+/// ⭐ The talent-grid index an item's DEFINITION names, or `None` when it names none.
++/// ? The talent-grid index an item's DEFINITION names, or `None` when it names none.
 +///
 +/// The definition entry (class 0x808016BD rows -> world tag, identity hash at `+0x78`) carries
 +/// `{tag 0x808017BD, u32 grid index}`: the index is the u32 just AFTER that tag. Measured
@@ -1549,7 +1551,7 @@ index 407b1a9..8e5dfa4 100644
 +                        }
 +                    }
                      if let Some(a) = art.as_ref() {
-                         // ⭐ +0x20 and +0x88/+0x98, as FUN_0026E0E0 itself would set them.
+                         // ? +0x20 and +0x88/+0x98, as FUN_0026E0E0 itself would set them.
                          // `None` = the table never measured this item: leave the default alone.
 @@ -2048,9 +2086,10 @@ fn run_inventory(cli: &Cli, cmd: &InventoryCmd) -> anyhow::Result<ExitCode> {
                  let slot = inv::slot_for_bucket(&spec.bucket, 0);
@@ -1587,7 +1589,7 @@ index 673bd65..8685f7f 100644
      if tags.is_empty() {
          return Err(OracleError::UnknownTag(root));
      }
-+    // ⭐ Schemas a codec can re-enter at RUNTIME, which no static closure reaches: the kind-0x22
++    // ? Schemas a codec can re-enter at RUNTIME, which no static closure reaches: the kind-0x22
 +    // typed field encodes its type tag through 0x80800046 and its body through whatever tag the
 +    // image names. `D1_ORACLE_EXTRA_TAGS=<tag>[,...]` adds body schemas a caller intends to use.
 +    let mut extra = vec![0x8080_0046u32];
@@ -1609,7 +1611,7 @@ index 0000000..a205907
 +// SPDX-FileCopyrightText: Copyright 2026 Destiny 1 Preservation Project
 +// SPDX-License-Identifier: GPL-2.0-or-later
 +
-+//! ⭐ Field **kind 0x23** - a 64-bit player/peer identifier - and the runtime state its codec needs.
++//! ? Field **kind 0x23** - a 64-bit player/peer identifier - and the runtime state its codec needs.
 +//!
 +//! Kind 0x23 is a leaf in the descriptor tree, but its handler does not pack bits itself
 +//! (encode `0x1069640`, entry `[0x18FAB40 + 0x150 + 0x23*8]`):
@@ -1623,10 +1625,10 @@ index 0000000..a205907
 +//! ```
 +//!
 +//! Both tag records are BSS, filled when the client registers its schemas, so the bare harness
-+//! reads 0 and faults. The tags are derived statically by the [`crate::activity_host`] §2 method
-+//! (relocation → sorted checksum table → static record → anchored descriptor), never hardcoded.
++//! reads 0 and faults. The tags are derived statically by the [`crate::activity_host`] ?2 method
++//! (relocation ? sorted checksum table ? static record ? anchored descriptor), never hardcoded.
 +//! The live client (2026-10-10, Tower run `SERVED`) has the flag object at `0x2639AE0` with
-+//! `+0xC = 0x80A58001` ⇒ **full 64-bit ids**, and BSS records holding exactly these two tags; the
++//! `+0xC = 0x80A58001` ? **full 64-bit ids**, and BSS records holding exactly these two tags; the
 +//! harness is seeded to match.
 +
 +use d1_eboot::descriptors::Index;
@@ -1643,11 +1645,11 @@ index 0000000..a205907
 +const FLAG_VFUNC: u64 = 0x1D1990;
 +const FULL_ID_GLOBAL: u64 = 0x19660C0;
 +const COMPACT_ID_GLOBAL: u64 = 0x19021B0;
-+/// ⭐ Field kind 0x22 (FUN_010695C0) is a TYPED body `{u32 type tag, …, body @+0x10}`: it encodes
++/// ? Field kind 0x22 (FUN_010695C0) is a TYPED body `{u32 type tag, ?, body @+0x10}`: it encodes
 +/// the tag through the schema named by `*[0x197DEB0]` (BSS record 0x28C2380), then the body with
 +/// that tag. Unseeded, the record reads zero and the walker runs on garbage (scripted-object
 +/// state, value+0x70: run 20261011 LIGHTS3).
-+/// Its static record (0x13C4078, found by the §2 checksum route) has the descriptor at +0x08
++/// Its static record (0x13C4078, found by the ?2 checksum route) has the descriptor at +0x08
 +/// rather than +0x50, so `derive` refuses it; the descriptor names itself 0x80800046 (4 bytes, one
 +/// kind-0x17 tag field).
 +const TYPED_FIELD_TAG_RECORD: (u64, u32) = (0x28C_2380, 0x8080_0046);
@@ -1696,14 +1698,14 @@ index b58427a..447e75e 100644
          registry::build(&mut h, &image, &index, tag)?;
 +        crate::runtime_ids::seed(&mut h, &image, &index)?;
  
-         // ⭐ Everything allocated from here on is one call's scratch. Nothing after this line may
+         // ? Everything allocated from here on is one call's scratch. Nothing after this line may
          // allocate scaffolding that outlives a call - `begin_call` releases it.
 @@ -137,12 +138,25 @@ impl SchemaHarness {
  
      /// Allocate a zeroed C object of the schema's declared size and seed it with `bytes`.
      pub fn make_object(&mut self, bytes: &[u8]) -> Result<u64> {
 -        let size = self.struct_size.max(16) as u64;
-+        // ⭐ An image LONGER than the struct carries out-of-line storage after it (a dynamic
++        // ? An image LONGER than the struct carries out-of-line storage after it (a dynamic
 +        // flags bitset's words, kind-0x22 fields), and any 8-aligned u64 of the form
 +        // `0xD1D1D1 << 40 | offset` is a pointer to `object + offset` - the one way a host-built
 +        // image can point at memory the client's codec can read in this harness.
@@ -1733,7 +1735,7 @@ index 0f39932..bbaeef8 100644
 +++ b/d1-server/crates/d1-oracle/src/sensor.rs
 @@ -90,7 +90,7 @@ const NONE_U32: u32 = 0xFFFF_FFFF;
  /// `gen`, `name_hash` and `name_sub` are all run-time inputs, never constants - see the module
- /// doc. `phase` is the signed enum the spawn gate reads (`-1` NONE, `3`, `6`, …); `tail` optionally
+ /// doc. `phase` is the signed enum the spawn gate reads (`-1` NONE, `3`, `6`, ?); `tail` optionally
  /// sets the two `FUN_0010CB60` spawn-precondition fields (`record+0x674`, `record+0x678`).
 -#[derive(Debug, Clone, PartialEq, Eq)]
 +#[derive(Debug, Clone, PartialEq)]
@@ -1744,7 +1746,7 @@ index 0f39932..bbaeef8 100644
      /// `Some((id, hash))` also sets `record+0x674`/`record+0x678` (value fields `[8]`/`[9]`), the
      /// second spawn precondition `FUN_0010CB60` checks. `None` leaves them at their defaults.
      pub tail: Option<(u32, u32)>,
-+    /// ⭐ Initial-state entries sent in the SAME frame, ahead of the phase entry. The client's
++    /// ? Initial-state entries sent in the SAME frame, ahead of the phase entry. The client's
 +    /// post-pass (`FUN_002D0B70` gate @0x2D062A) refuses to run while ANY replicated slot owned
 +    /// by the authority (`slot+0x60 < 0x80`) still has `slot+0x15` "awaiting initial state" set -
 +    /// so a lone phase entry decodes, marks its slot dirty, and is never dispatched. Measured live
@@ -1755,7 +1757,7 @@ index 0f39932..bbaeef8 100644
 +    /// `FUN_0011DE30` then calls the `c_time_of_day` setter `0x8B46C0` with `record+0x680`
 +    /// (@0x11DF72..0x11DFD6). Without it every activity starts at midnight.
 +    pub time_of_day: Option<f32>,
-+    /// ⭐ `Some(peer)`: also send the sensor AUTHORITY table (`has_sensor_block = 1`) declaring
++    /// ? `Some(peer)`: also send the sensor AUTHORITY table (`has_sensor_block = 1`) declaring
 +    /// that peer index's sensors live. See [`authority_table_image`].
 +    pub authority: Option<SensorAuthority>,
 +}
@@ -1782,7 +1784,7 @@ index 0f39932..bbaeef8 100644
 +pub const TAG_AUTHORITY_TABLE: u32 = 0x8080_0CF7;
 +pub const AUTHORITY_ENTRIES: usize = 65;
 +
-+/// ⭐ The authority table with one entry made live.
++/// ? The authority table with one entry made live.
 +///
 +/// `FUN_002A1210` reads 65 "entry changed" bits, decodes the table, then runs `FUN_002A1080` per
 +/// entry: a changed entry whose generation differs from the stored one (`world+0xA94+i*12`) is
@@ -1823,15 +1825,15 @@ index 0f39932..bbaeef8 100644
 +/// `player_slot+0x218` (`rep movsd`, 30 dwords @0x408804).
 +pub const TAG_PLAYER_SLOT_VALUE: u32 = 0x8080_22A5;
 +
-+/// ⭐ The value that assigns a player slot to `owner`.
++/// ? The value that assigns a player slot to `owner`.
 +///
 +/// The image is the schema default as the client default-inits it (read back from a fresh slot,
 +/// `player_slot+0x218..+0x290`, identical on all 30 slots) with three fields set:
 +/// * `+0x40` (kind 0x23, a full 64-bit id - see [`crate::runtime_ids`]) = **owner**, lands at
 +///   `player_slot+0x258`, which the linker `FUN_001195E0` matches against the player-array element's
 +///   id (`element+0x18`, compared in `FUN_003029A0`) - the profile SOID.
-+/// * `+0x08` / `+0x09` = 1 → `player_slot+0x220` / `+0x221`.
-+/// * `+0x38` = **0** (default NONE) → `player_slot+0x250`. Once the slot is ours the spawn gate
++/// * `+0x08` / `+0x09` = 1 ? `player_slot+0x220` / `+0x221`.
++/// * `+0x38` = **0** (default NONE) ? `player_slot+0x250`. Once the slot is ours the spawn gate
 +///   reads the client's OWN block at `player_slot+0x290` (`FUN_001192A0` returns `slot +
 +///   [rec+0x200]`, needs `[+9] != 0`), and the client's per-tick writer `FUN_00408910` sets that
 +///   `+0x299` only when `slot+0x250 == slot+0x2C8 = (i8)players[i]+0x738` (0 for a fresh player)
@@ -1881,7 +1883,7 @@ index 0f39932..bbaeef8 100644
 +        name_ref_bits(self.name_hash, self.name_i8, self.name_sub)
      }
  
-     /// ⭐ Assemble the full 59-byte `sensor_auth_update` payload.
+     /// ? Assemble the full 59-byte `sensor_auth_update` payload.
 @@ -163,9 +280,68 @@ impl SensorPhaseUpdate {
          let (value_bits, value_pay) = self.value_bits()?;
          let mut w = BitWriter::default();
@@ -2006,7 +2008,7 @@ index 0000000..00d53dd
 +// SPDX-FileCopyrightText: Copyright 2026 Destiny 1 Preservation Project
 +// SPDX-License-Identifier: GPL-2.0-or-later
 +
-+//! ⭐ A world's replicated sensor slots, **derived from content** instead of read out of a running
++//! ? A world's replicated sensor slots, **derived from content** instead of read out of a running
 +//! client.
 +//!
 +//! The activity host must send the initial state of every authority sensor slot (the client's
@@ -2276,7 +2278,7 @@ index 0000000..00d53dd
 +    }
 +}
 +
-+/// [`derive`] behind a disk cache in the temp directory (≈8 s per bubble uncached).
++/// [`derive`] behind a disk cache in the temp directory (?8 s per bubble uncached).
 +pub fn derive_cached(world_tag: u32, bubble: usize) -> Result<WorldSensors> {
 +    let dir = std::env::temp_dir().join("d1-world-sensors");
 +    let path = dir.join(format!("v2-{world_tag:08x}-{bubble}.txt"));
@@ -2293,19 +2295,19 @@ index 6a76336..26af823 100644
 --- a/d1-server/crates/d1-responder/src/main.rs
 +++ b/d1-server/crates/d1-responder/src/main.rs
 @@ -2158,6 +2158,7 @@ const KNOBS: &[(&str, &str, &str)] = &[
-     ("D1_AH_IP", "<D1_BAP_IP>", "⭐ address msg 17 resolves to"),
-     ("D1_AH_PORT", "<D1_BAP_PORT>", "⭐ port msg 17 resolves to; defaults to the primary BAP port"),
-     ("D1_AH_ENDIAN", "be", "⛔ msg 17 byte order. `le` REPRODUCES A FAILED RUN - see the note at the send site"),
-+    ("D1_MM_TUNING", "<unset>", "⭐ msg 43 f4.1 tuning fields, e.g. 8=4. f8 = big-party size; 0 (the stub) loops setup:matchmaking with big-party-count-exceeds-teams"),
-     ("D1_MM_CONFIG", "1", "⭐ answer BAP msg 42 with msg 43 (matchmaking configuration, f4 present)"),
-     ("D1_AH_PUSH_100", "0", "⭐ send the msg 100 push. ✅ UNBLOCKED - header class 6 is 32 bytes"),
-     ("D1_AH_PUSH_102", "0", "⭐ attempt the msg 102 push. Refused: 102 is not on the accept-set"),
+     ("D1_AH_IP", "<D1_BAP_IP>", "? address msg 17 resolves to"),
+     ("D1_AH_PORT", "<D1_BAP_PORT>", "? port msg 17 resolves to; defaults to the primary BAP port"),
+     ("D1_AH_ENDIAN", "be", "? msg 17 byte order. `le` REPRODUCES A FAILED RUN - see the note at the send site"),
++    ("D1_MM_TUNING", "<unset>", "? msg 43 f4.1 tuning fields, e.g. 8=4. f8 = big-party size; 0 (the stub) loops setup:matchmaking with big-party-count-exceeds-teams"),
+     ("D1_MM_CONFIG", "1", "? answer BAP msg 42 with msg 43 (matchmaking configuration, f4 present)"),
+     ("D1_AH_PUSH_100", "0", "? send the msg 100 push. ? UNBLOCKED - header class 6 is 32 bytes"),
+     ("D1_AH_PUSH_102", "0", "? attempt the msg 102 push. Refused: 102 is not on the accept-set"),
 @@ -2201,6 +2202,8 @@ const KNOBS: &[(&str, &str, &str)] = &[
      ("D1_503_RAW", "<unset>", "exact 503 argument bitstream, hex"),
      ("D1_503_FIELDS", "<unset>", "503 field probe, value:bits pairs"),
-     ("D1_205_RAW", "<unset>", "⭐ 205 body override - MUST agree with D1_503_RAW on the shared 0x80801941"),
-+    ("D1_UNLOCK_FLAGS", "<the ten>", "⭐ unlock-flag indices to grant at value 2. 308/3389 = BANNED from social spaces (Tower) - drop them for the Director"),
-+    ("D1_INVESTMENT_TIME", "now", "⭐ 0x80801941 field [1], the investment clock base (Unix s). 0/off = send 0 (old behaviour)"),
+     ("D1_205_RAW", "<unset>", "? 205 body override - MUST agree with D1_503_RAW on the shared 0x80801941"),
++    ("D1_UNLOCK_FLAGS", "<the ten>", "? unlock-flag indices to grant at value 2. 308/3389 = BANNED from social spaces (Tower) - drop them for the Director"),
++    ("D1_INVESTMENT_TIME", "now", "? 0x80801941 field [1], the investment clock base (Unix s). 0/off = send 0 (old behaviour)"),
      ("D1_504_RAW", "<unset>", "504 login_character body override"),
      ("D1_701_RAW", "<unset>", "701 body override"),
      ("D1_702_RAW", "<unset>", "702 body override"),
@@ -2313,7 +2315,7 @@ index 6a76336..26af823 100644
      Some(b503[21..] == b205[1..])
  }
  
-+// ── the investment clock ─────────────────────────────────────────────────────────────────────────
++// ?? the investment clock ?????????????????????????????????????????????????????????????????????????
 +//
 +// `0x80801941` field [1] - the u64 right after the family-5 root, registry element `+0x008` - is the
 +// INVESTMENT TIME: signed calendar seconds (Unix UTC). The client's clock (`0x584CB0`) is
@@ -2373,7 +2375,7 @@ index 6a76336..26af823 100644
 +/// decoded configuration to `matchmaking_iface+0x38` and `0x5990B0` copies the eleven values into
 +/// every matchmaking properties struct: f1->+0x08, f2->+0x98, f3->+0x58, f4->+0xB8, f5->+0x64,
 +/// f6->+0x5C, f7->+0x60, **f8->+0xB0**, f9->+0xB4, f10->+0x130, f11->+0x40 (read live 2026-10-10).
-+/// ⭐ f8 is the **big-party size**: `0xB09FEA` counts a party as "big" when `size >= props+0xB0`,
++/// ? f8 is the **big-party size**: `0xB09FEA` counts a party as "big" when `size >= props+0xB0`,
 +/// and `0xB0A720` refuses with `big-party-count-exceeds-teams` when that count exceeds
 +/// `props+0xC4` (0 for the Tower). With the empty `f4.1` stub f8 is 0, every solo player is a big
 +/// party, and `setup:matchmaking` loops forever. Unset = the old empty stub.
@@ -2434,13 +2436,13 @@ index 6a76336..26af823 100644
 +    shared_0x80801941_agrees(&a, &b)
 +}
 +
- /// ⭐⭐⭐ **The 503 argument bitstream this responder actually sends.**
+ /// ??? **The 503 argument bitstream this responder actually sends.**
  ///
  /// The 503 arm and [`check_205_503_agree`] both call this, and that is the entire point. Before
 @@ -2319,7 +2443,17 @@ fn served_503_body() -> Vec<u8> {
          return d1_bap::investment_503_fields(&fields);
      }
-     // ⭐ THE DEFAULT: ten unlock flags at value 2, with the run's own account SOID spliced in.
+     // ? THE DEFAULT: ten unlock flags at value 2, with the run's own account SOID spliced in.
 -    d1_bap::investment_503_unlocks_raw_for(env_soid("D1_ACCOUNT_SOID", 0xD100_0000_0000_0001))
 +    // `D1_UNLOCK_FLAGS` replaces the ten with a caller-chosen list (see [`unlock_flag_override`]).
 +    let mut body = match unlock_flag_override().and_then(|ix| d1_bap::unlock_flag_bodies(&ix)) {
@@ -2449,7 +2451,7 @@ index 6a76336..26af823 100644
 +    };
 +    if let Some(t) = investment_time() {
 +        if !splice_investment_time(&mut body, INVESTMENT_TIME_BIT_503, t) {
-+            warn!("      ⛔ 503: investment-time slot not where expected - clock left at 0");
++            warn!("      ? 503: investment-time slot not where expected - clock left at 0");
 +        }
 +    }
 +    body
@@ -2467,13 +2469,13 @@ index 6a76336..26af823 100644
 +    };
 +    if let Some(t) = investment_time() {
 +        if !splice_investment_time(&mut body, INVESTMENT_TIME_BIT_205, t) {
-+            warn!("      ⛔ 205: investment-time slot not where expected - clock left at 0");
++            warn!("      ? 205: investment-time slot not where expected - clock left at 0");
 +        }
 +    }
 +    body
  }
  
- // ═══════════════════════════════════════════════════════════════════════════════════════════════
+ // ???????????????????????????????????????????????????????????????????????????????????????????????
 @@ -2463,7 +2606,7 @@ fn run_controls() -> usize {
            format!("[{} flags, missing {missing:?}]", flags.len()));
      let b503 = served_503_body();
@@ -2481,7 +2483,7 @@ index 6a76336..26af823 100644
 -          shared_0x80801941_agrees(&b503, &b205) == Some(true), String::new());
 +          served_bodies_agree(&b503, &b205) == Some(true), String::new());
  
-     // ── ⭐⭐ P2. THE CONTROL AXIS, stated before the assertions:
+     // ?? ?? P2. THE CONTROL AXIS, stated before the assertions:
      //
 @@ -2572,8 +2715,22 @@ fn run_controls() -> usize {
  }
@@ -2496,9 +2498,9 @@ index 6a76336..26af823 100644
 +    if b205.len() * 8 >= INVESTMENT_TIME_BIT_205 + 64 && b503.len() * 8 >= INVESTMENT_TIME_BIT_503 + 64 {
 +        let t = (0..64).fold(0u64, |a, i| a << 1 | u64::from(bit_at(&b205, INVESTMENT_TIME_BIT_205 + i)));
 +        if t == 0 {
-+            warn!("  ⛔ investment time on the wire is 0 - the client's investment clock reads 1970");
++            warn!("  ? investment time on the wire is 0 - the client's investment clock reads 1970");
 +        } else {
-+            info!("  ✅ investment time on the wire: {t} (Unix seconds)");
++            info!("  ? investment time on the wire: {t} (Unix seconds)");
 +        }
 +        for i in 0..64 {
 +            set_bit(&mut b205, INVESTMENT_TIME_BIT_205 + i, false);
@@ -2507,7 +2509,7 @@ index 6a76336..26af823 100644
 +    }
      let (b503, b205) = (&b503[..], &b205[..]);
  
-     // ⭐⭐ WHAT THE OLD GUARD COULD NOT SAY: two byte-identical **empty** bodies agree perfectly.
+     // ?? WHAT THE OLD GUARD COULD NOT SAY: two byte-identical **empty** bodies agree perfectly.
 @@ -3438,6 +3595,19 @@ async fn main() -> Result<()> {
                                                                                 body ({}B): {}", b.len(),
                                                                                b.iter().map(|x| format!("{x:02x}")).collect::<String>());
@@ -2555,7 +2557,7 @@ index 3452a32..b03710d 100644
 @@ -1,5 +1,17 @@
  # The activity-lifetime-state record - the wall behind tasks 9/10 and the spawn gate
  
-+> # ✅ 2026-10-10 (Windows, Tower): THE `[U]` PROMOTION GATE IS SETTLED - served phase lands
++> # ? 2026-10-10 (Windows, Tower): THE `[U]` PROMOTION GATE IS SETTLED - served phase lands
 +>
 +> A wire element IS dispatched, but only once the post-pass runs, and the post-pass is held by
 +> `FUN_002D0B70` (called @0x2D062A): it returns 0 while any replicated sensor slot still has
@@ -2564,9 +2566,9 @@ index 3452a32..b03710d 100644
 +> (`+0x66`), and waits forever. Fix: the same udt-5 frame carries an initial-state entry for every
 +> such slot with `fresh=1, presence=0` (default-init, empty change mask; `FUN_002C9050` reads the
 +> bit @0x2C91BA). That is `SensorPhaseUpdate.init` + AH `D1_AH_SENSOR_INIT=<manifest>`. Tower:
-+> 99 slots, names stable across boots. Measured: `record+0x1AC` 0xFF → 03 through `FUN_0011DE30`,
++> 99 slots, names stable across boots. Measured: `record+0x1AC` 0xFF ? 03 through `FUN_0011DE30`,
 +> with no hook or poke (run `20261010-165533-WIN-SENSORINIT2`).
 +
- > # ✅✅ SERVED, 2026-08-11 - THE PHASE IS A WIRE FIELD, DELIVERED BY AH **udt 5 `sensor_auth_update`**
+ > # ?? SERVED, 2026-08-11 - THE PHASE IS A WIRE FIELD, DELIVERED BY AH **udt 5 `sensor_auth_update`**
  >
- > **This supersedes the udt-7 conclusion in the retraction banner below AND §4d.** An
+ > **This supersedes the udt-7 conclusion in the retraction banner below AND ?4d.** An

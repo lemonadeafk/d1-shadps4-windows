@@ -61,8 +61,8 @@ _WALL = [
     (2, "perf", BREACH, 125, "ghost_perf.bin", "the Ghost flies to the power control with its torch"),
     _line(6, 12, "o2_35"),
     _line(6, 13, "o2_36"),
-    # the game itself reports when the player walks to the right-hand side of the platform
-    (0, "wait", BREACH, 28, 123, 20, "pm_nux_ghost_light_up_fly_to_gun"),
+    # (pm_nux_ghost_light_up_fly_to_gun, kind 28 sub 123, is reported when the player stands at
+    # the rifle - behind the gate, so it cannot come before the power-up)
     (1, "state", BREACH, "0", (0.0, 0.0, 0.25), "power 25%"),
     (1, "state", BREACH, "0", (0.0, 0.0, 0.5), "power 50%"),
     (1, "state", BREACH, "0", (0.0, 0.0, 0.75), "power 75%"),
@@ -74,9 +74,19 @@ _WALL = [
     (1, "objective", 7, HIDDEN, "FIND A WEAPON done"),
     (1, "objective", 11, ACTIVE, "objective: GRAB THE RIFLE"),
     _line(2, 16, "o2_60"),
-    (6, "seq", DIALOGUE, 33, "seq_fallen_scream_far"),
+    # The rifle (ACTIVITY kind 4 sub 6, o_weapon) has no prompt of its own: the objective's
+    # player trigger (kind 29 sub 35), once the server enables it, makes the game send udt 18
+    # "incident" for as long as the player stands at the rifle. The server then takes the
+    # rifle away and moves the mission on. NIGHT-NOTES section 62.
+    (1, "trigger", 35, True, "rifle trigger armed"),
+    (0, "incident", 4 * 3600, "the player reaches the rifle"),
+    (0, "trigger", 35, False, "rifle trigger disarmed"),
+    (0, "gone", ACTIVITY, "6", "the rifle is taken"),
+    (1, "objective", 11, HIDDEN, "GRAB THE RIFLE done"),
+    _line(1, 17, "o2_70"),
+    (4, "objective", 14, ACTIVE, "objective: FIGHT THROUGH THE WALL"),
+    (2, "seq", DIALOGUE, 33, "seq_fallen_scream_far"),
     (3, "spawn", BREACH, "the Fallen arrive"),
-    _line(3, 17, "o2_70"),
     _line(8, 18, "o2_80"),
     _line(9, 19, "o2_90"),
     _line(8, 20, "o2_95"),
@@ -144,7 +154,21 @@ def wait_in_world(timeout=900):
     return None
 
 
+def wait_incident(run, offset, timeout):
+    """True once the activity host logs a udt-18 incident from the game after `offset`."""
+    path = os.path.join(run, "activity-host.log")
+    end = time.time() + timeout
+    while time.time() < end:
+        with open(path, "rb") as f:
+            f.seek(offset)
+            if b"CAPTURED udt 18 " in f.read():
+                return True
+        time.sleep(0.5)
+    return False
+
+
 def main():
+    armed_at = 0
     ap = argparse.ArgumentParser()
     ap.add_argument("--bubble", type=int, default=3)
     ap.add_argument("--script", default="wall", choices=sorted(SCRIPTS))
@@ -172,7 +196,18 @@ def main():
             hit = watcher.wait(int(group, 16), wkind, sub, timeout)
             print(time.strftime("%H:%M:%S"), name, "reported by the game" if hit else "not reported in %d s - going on" % timeout, flush=True)
             continue
-        if kind == "objective":
+        if kind == "incident":
+            _, _, timeout, name = step
+            hit = wait_incident(run, armed_at, timeout)
+            print(time.strftime("%H:%M:%S"), name, "reported by the game" if hit else "not reported in %d s - going on" % timeout, flush=True)
+            continue
+        if kind == "trigger":
+            # kind-29 value (schema 0x80800463): {bool enabled, i32 limit}
+            _, _, sub, on, name = step
+            if on:
+                armed_at = os.path.getsize(os.path.join(run, "activity-host.log"))
+            entries = ["%s:%d:%s" % (ACTIVITY, sub, "0100000001000000" if on else "0000000000000000")]
+        elif kind == "objective":
             _, _, sub, state, name = step
             entries = ["%s:%d:%s" % (ACTIVITY, sub, (bytes([state]) + objective[1:]).hex())]
         elif kind == "seq":

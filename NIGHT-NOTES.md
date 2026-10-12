@@ -1264,3 +1264,29 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   shadPS4 now also logs the caller chain (frame-pointer walk) for an unhandled access
   violation, so the next occurrence names who passed the bad pointer
   (patches\shadps4-crash-address-log.diff, in shadps4-all-changes.diff).
+
+## 62. The rifle: player triggers and incidents (2026-10-12 morning, runs RIFLE1-3, user at the rifle)
+- USER RUN (RISES, 09:25): the mission script stalled - the user reached the stairs trigger
+  (pm_in_wall, 09:28:16) before the script began waiting for it. Fix: sense_reports.Watcher
+  (history=True) also counts what the game reported earlier in the run.
+- pm_nux_ghost_light_up_fly_to_gun (fc0e45a3 kind 28 sub 123) is reported when the player stands
+  AT THE RIFLE (not "the right-hand side of the platform").
+- The rifle on the box = `cosmo_m0_phase01_breach.o_weapon`, ACTIVITY group 992bb471 kind 4
+  sub 6, at (410.6,-794.4,17.7). A two-part prefab (0x80cb828c -> 0x80cb82d4 + 0x80a3d2c8), no
+  state component (no 0x808028fa in its record): state channels do nothing. o_chest_primary_weapon
+  (534.9,-736.8) is a different object further on.
+- KIND 29 = PLAYER TRIGGERS (`*._player_trigger`, pt_*; value 0x80800463 at rec+0x1B0 =
+  {bool enabled, i32 limit @+4}; tick FUN_0012A7E0). Conditions listed in the record: name refs
+  of kind 2/4 (member / object), 0x37, or 0x3A (a volume; obj_get_weapon uses volume sub 74).
+  ALL are disabled by default. Enabled from the server (inject 992bb471:35:0100000001000000),
+  the game sends udt 18 `incident` (53 B, ~10/s) for as long as the player stands in the
+  volume, and rec+0x1AC goes -1 -> 0x80000000. No on-screen prompt appears.
+- Activity host now logs every udt-18 payload (listener.rs capture_once).
+- mission_director: new steps ("trigger", sub, on, name) and ("incident", timeout, name). The
+  Wall script after the gate: arm obj_get_weapon trigger -> wait for the incident -> disarm ->
+  o_weapon gone (exists = 0) -> GRAB THE RIFLE hidden -> o2_70 -> objective 14 FIGHT THROUGH
+  THE WALL -> scream -> Fallen arrive -> o2_80/90/95. Run RIFLE3 with the user walking: incident
+  3 s after reaching the rifle, every step sent, objective 14 read back = 3, USER: "the rifle
+  disappeared". The user heard "they're coming for us" repeatedly and expected a pickup prompt.
+- Open: the player is not GIVEN a Khvostov (already carries weapons); which o2 line is "I hope
+  you know how to use that thing"; the other player triggers (pt_*) are still disabled.
