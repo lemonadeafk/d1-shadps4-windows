@@ -1164,3 +1164,35 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   the real mission hangs on this report is my guess.
 - Objective obj_breach_fallen01 (kind 3 sub 20) reports change too (3-bit groups filling in as
   squads register and when the player moves) - not decoded yet.
+
+## 58. The mission is walkable from its start into the Wall (2026-10-11 23:35, runs HWY2/XB1/MIS1)
+- THE WAY IN (positions x, y, z; spawn = 328.6, -829.5, 1.9, the Wall's face is y ~ -820):
+  stairs at the Wall's foot (328,-829 -> 329,-820.6, z 3.8), west along the ledge into a red-lit
+  corridor (322,-820 -> 317.5,-818.5, z 5.9), north up the stairs (317,-812 z 7 -> 319,-800 z 11
+  -> 322,-796 z 12.4), east along the inside (329,-797 -> 340,-800.5 -> 350,-798 -> 360,-794 ->
+  370,-797 -> 376,-794, z 11-13). The Wall room's platform is further east (386..408, -787..-773,
+  z 17.4). Found from the positions of the scripted objects, then walked by a test walker that
+  steers on the player's position (scratchpad nav.py / route.py - test tooling only).
+- The game reports kind 28 pm_in_wall (992bb471 sub 33) at the stairs' top (enter/leave pairs).
+- AREA SWITCH WORKS, SERVED: around x = 350 inside the Wall the client starts a slice-set
+  transition ('transitioning:normal_z_leg' to PRV24.24 = bubble 3), reports it in udt 21, the
+  host re-publishes the PAH record and arms bubble 3's sensor frame ("the client is now in
+  region 24") - code from 2026-10-10, now exercised on foot for the first time. From then on the
+  client's udt-6 reports name the Wall's group fc0e45a3.
+- One crash at that boundary (HWY2, 0xc0000005 at eboot 0xCFDEDE, a vector-math job) did not
+  repeat in two later crossings (XB1, MIS1). shadPS4 now logs the faulting address and
+  registers of an unhandled access violation (patches\shadps4-crash-address-log.diff) so the
+  next one says what it touched.
+- Activity host: D1_AH_SENSOR_KIND_SKIP=<kind>@<bubble>[,..] (that bubble keeps the kind's bare
+  default: `2@3` = the Wall starts without squads) and D1_AH_SENSOR_FOLLOW_MAX=<n> (repeat cap of
+  the burst after an area switch; 3 = 15 s, so a script can send its values soon after).
+- mission_director --script mission: waits until the game reports the Wall's o_breach_control
+  (= the player is in bubble 3), 16 s later runs the Wall sequence. Verified MIS1: start on the
+  highway, walk in, detection 23:32:29, Ghost + torch, lines, power, gate, Fallen - every step
+  sent, no crash (Desktop\MISSION-walked-into-the-Wall.png, MISSION-ghost-torch-walk-in.png).
+  "Launch Destiny (A Guardian Rises).cmd" now runs exactly this (autopilot destination
+  guardian_rises_mission).
+- The highway Ghost (sq_ghost, same definition, same single performance 0x9B1D6A71) takes the
+  value on perf_ghost (ecf574b5 sub 30) but does not move: its path must come from somewhere
+  else (o_ghost_ab / _bc / _c guide objects?). Open.
+- Seen once near the Wall's foot: a night sky with a green aurora instead of the sunset. Open.

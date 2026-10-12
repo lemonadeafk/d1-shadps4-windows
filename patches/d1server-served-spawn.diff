@@ -169,7 +169,7 @@ index c535359..61e1134 100644
                  for e in events {
                      // ⭐⭐ The heartbeat path used to print EVERY event at INFO, including the
 diff --git a/d1-server/crates/d1-activity-host/src/main.rs b/d1-server/crates/d1-activity-host/src/main.rs
-index d6bf57f..57c948c 100644
+index d6bf57f..55df4e9 100644
 --- a/d1-server/crates/d1-activity-host/src/main.rs
 +++ b/d1-server/crates/d1-activity-host/src/main.rs
 @@ -443,8 +443,13 @@ fn main() -> anyhow::Result<()> {
@@ -329,7 +329,7 @@ index d6bf57f..57c948c 100644
  
              let session_id = format!("d1ah-{ah_id:016x}");
              let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
-@@ -574,16 +665,22 @@ fn main() -> anyhow::Result<()> {
+@@ -574,16 +665,25 @@ fn main() -> anyhow::Result<()> {
                      i.set_activity_name(activity.clone());
                      i.set_activity_index(activity_index);
                      i.set_activity_checksum(activity_checksum);
@@ -349,10 +349,13 @@ index d6bf57f..57c948c 100644
 +                        if let Some(n) = sensor_repeat_max {
 +                            i.set_sensor_repeat_max(n);
 +                        }
++                        if let Some(n) = std::env::var("D1_AH_SENSOR_FOLLOW_MAX").ok().and_then(|v| v.parse().ok()).filter(|n| *n > 0) {
++                            i.set_sensor_follow_max(n);
++                        }
                      }
                      i.set_host_heartbeat(std::time::Duration::from_millis(heartbeat_ms));
                      i
-@@ -593,3 +690,187 @@ fn main() -> anyhow::Result<()> {
+@@ -593,3 +693,205 @@ fn main() -> anyhow::Result<()> {
          }
      }
  }
@@ -468,8 +471,26 @@ index d6bf57f..57c948c 100644
 +    // that kind is sent with this value image instead of the bare default. Used to probe what a
 +    // record class does with host state - e.g. squad members (kind 2, 0x80800868), whose setter
 +    // FUN_001BE5F0 spawns the actor when value+6 is set and value+5 is 0 or 2 (FUN_001BE9B0).
++    // ⭐ `D1_AH_SENSOR_KIND_SKIP=<kind>@<bubble>[,...]`: in that bubble the kind keeps its bare
++    // default instead of the KIND_VALUE image - e.g. `2@3`: the Wall's squads do not spawn when
++    // the player walks in; the mission script brings them in on its own cues.
++    let here = bubble.unwrap_or_else(initial_bubble);
++    let skipped: Vec<u8> = std::env::var("D1_AH_SENSOR_KIND_SKIP")
++        .map(|v| {
++            v.split(',')
++                .filter_map(|item| {
++                    let (k, b) = item.trim().split_once('@')?;
++                    (b.trim().parse::<usize>().ok()? == here).then(|| k.trim().parse().ok()).flatten()
++                })
++                .collect()
++        })
++        .unwrap_or_default();
 +    if let Ok(spec) = std::env::var("D1_AH_SENSOR_KIND_VALUE") {
 +        for item in spec.split(',') {
++            if item.split(':').next().and_then(|k| k.trim().parse::<u8>().ok()).is_some_and(|k| skipped.contains(&k)) {
++                tracing::info!("D1_AH_SENSOR_KIND_SKIP: bubble {here} keeps the default for `{item}`");
++                continue;
++            }
 +            let f: Vec<&str> = item.splitn(3, ':').collect();
 +            let parsed = match f.as_slice() {
 +                [k, t, path] => k.trim().parse::<u8>().ok().zip(
@@ -611,7 +632,7 @@ index 4e17610..1548c4d 100644
      pub fn pah_region_id(&self) -> u32 {
          let o = Self::PAH_REGIONS + Self::PAH_REGION_ID;
 diff --git a/d1-server/crates/d1-activity-host/src/state.rs b/d1-server/crates/d1-activity-host/src/state.rs
-index 891ceb8..1648395 100644
+index 891ceb8..bc9c169 100644
 --- a/d1-server/crates/d1-activity-host/src/state.rs
 +++ b/d1-server/crates/d1-activity-host/src/state.rs
 @@ -171,6 +171,8 @@ pub struct ActivityInstance {
@@ -623,7 +644,7 @@ index 891ceb8..1648395 100644
      /// ⭐⭐ The bubble count published at `global_activity_state+0x10` (and the `0xFF` unchosen
      /// bytes at `+0x14`). `FUN_002A0320` runs right after the checksum passes and requires this to
      /// equal the world's scenario bubble count (`orbit` = 16). `0` = every run to date =
-@@ -222,8 +224,27 @@ pub struct ActivityInstance {
+@@ -222,8 +224,29 @@ pub struct ActivityInstance {
      /// content record exists**, and the applier drops it silently (task #4) - so a repeating send
      /// is how at least one copy arrives after the world is resident.
      sensor_repeat: Option<Duration>,
@@ -633,6 +654,8 @@ index 891ceb8..1648395 100644
 +    sensor_repeat_max: Option<u64>,
 +    /// `sensors_sent` when the current burst of repeats began (the cap counts from here).
 +    sensor_burst_base: u64,
++    /// Frame cap of the bursts after a region switch; see [`Self::set_sensor_follow_max`].
++    sensor_follow_max: Option<u64>,
 +    /// The region the client last reported being in (udt 21 `+0xB8`).
 +    current_region: u32,
 +    /// ⭐ `D1_AH_SENSOR_INJECT_DIR`: every `*.udt5` file that appears here is sent to the client
@@ -651,7 +674,7 @@ index 891ceb8..1648395 100644
  }
  
  impl ActivityInstance {
-@@ -306,6 +327,7 @@ impl ActivityInstance {
+@@ -306,6 +329,7 @@ impl ActivityInstance {
              // 0 is what every run so far sent, and naming what 0 means is the point.
              activity_index: 0,
              activity_checksum: 0,
@@ -659,12 +682,13 @@ index 891ceb8..1648395 100644
              bubble_count: 0,
              bubble_chosen: Vec::new(),
              pah_region: None,
-@@ -320,6 +342,13 @@ impl ActivityInstance {
+@@ -320,6 +344,14 @@ impl ActivityInstance {
              sensor_sent: false,
              sensors_sent: 0,
              sensor_repeat: None,
 +            sensor_repeat_max: None,
 +            sensor_burst_base: 0,
++            sensor_follow_max: None,
 +            current_region: 0,
 +            inject_dir: std::env::var_os("D1_AH_SENSOR_INJECT_DIR").map(std::path::PathBuf::from),
 +            bubble_sensor_payloads: std::collections::BTreeMap::new(),
@@ -673,7 +697,7 @@ index 891ceb8..1648395 100644
              sensor_last_sent: None,
          }
      }
-@@ -435,6 +464,74 @@ impl ActivityInstance {
+@@ -435,6 +467,81 @@ impl ActivityInstance {
          self.sensor_repeat = Some(every);
      }
  
@@ -740,6 +764,13 @@ index 891ceb8..1648395 100644
 +        self.bubble_sensor_payloads = payloads;
 +    }
 +
++    /// Cap the bursts sent after a region switch at `max` frames (`D1_AH_SENSOR_FOLLOW_MAX`): the
++    /// world is already resident then, so a few frames are enough and a mission script can start
++    /// sending its own values sooner without the repeats overwriting them.
++    pub fn set_sensor_follow_max(&mut self, max: u64) {
++        self.sensor_follow_max = Some(max);
++    }
++
 +    /// Cap the repeating mode at `max` frames in total ([`Self::sensor_repeat_max`]).
 +    pub fn set_sensor_repeat_max(&mut self, max: u64) {
 +        self.sensor_repeat_max = Some(max);
@@ -748,17 +779,19 @@ index 891ceb8..1648395 100644
      /// ⭐⭐ The udt-5 `sensor_auth_update`, sent **once** after the instance reaches [`Live`]
      /// (or on an interval, in [`Self::set_sensor_repeat`] mode).
      ///
-@@ -462,6 +559,9 @@ impl ActivityInstance {
+@@ -462,6 +569,11 @@ impl ActivityInstance {
              }
              // Repeat mode: pace on the interval since the last send.
              Some(every) => {
-+                if self.sensor_repeat_max.is_some_and(|m| self.sensors_sent - self.sensor_burst_base >= m) {
++                // A burst that follows the player into another bubble may have its own, shorter cap.
++                let cap = if self.current_region != self.initial_region { self.sensor_follow_max.or(self.sensor_repeat_max) } else { self.sensor_repeat_max };
++                if cap.is_some_and(|m| self.sensors_sent - self.sensor_burst_base >= m) {
 +                    return None;
 +                }
                  if let Some(last) = self.sensor_last_sent {
                      if now.saturating_duration_since(last) < every {
                          return None;
-@@ -469,7 +569,13 @@ impl ActivityInstance {
+@@ -469,7 +581,13 @@ impl ActivityInstance {
                  }
              }
          }
@@ -773,7 +806,7 @@ index 891ceb8..1648395 100644
          self.sensor_sent = true;
          self.sensor_last_sent = Some(now);
          self.sensors_sent += 1;
-@@ -510,6 +616,7 @@ impl ActivityInstance {
+@@ -510,6 +628,7 @@ impl ActivityInstance {
          s.set_activity_index(self.activity_index);
          // ⭐⭐ The field that aborts rung 33's world transition when it disagrees with content.
          s.set_activity_checksum(self.activity_checksum);
@@ -781,7 +814,7 @@ index 891ceb8..1648395 100644
          // ⭐⭐ The bubble count + unchosen bytes that FUN_002A0320 validates right after. Bounded
          // to the 64-byte field; a too-large count is a config error, so publish what we can and let
          // the loud "bubble count mismatch" name a wrong number rather than silently truncating.
-@@ -586,6 +693,23 @@ impl ActivityInstance {
+@@ -586,6 +705,23 @@ impl ActivityInstance {
          // the operator reads it; every re-publish after it logs at DEBUG, because a refresh every
          // few seconds repeating the same receipt turns the run log into noise and hides the
          // warnings. The condition is the join/refresh discriminator we already track.
@@ -805,7 +838,7 @@ index 891ceb8..1648395 100644
          match self.pah_region {
              Some((region, peer, token)) => match m.set_pah_region(region, peer, token) {
                  Ok(()) if first => tracing::info!(
-@@ -817,13 +941,71 @@ impl ActivityInstance {
+@@ -817,13 +953,71 @@ impl ActivityInstance {
              //
              // Accepted and recorded, not acted on. A stub with one peer has nothing to reserve
              // against, and `43 reservations_failed` is for failures we cannot have.
@@ -879,7 +912,7 @@ index 891ceb8..1648395 100644
      /// Advance the replication epoch. `[C]` a `u8`; the wire payload is `{u8 epoch, u8 suppress}`.
      ///
      /// Nothing in a stub needs to call this - it exists because the epoch is authoritative state
-@@ -894,6 +1076,13 @@ impl ActivityInstance {
+@@ -894,6 +1088,13 @@ impl ActivityInstance {
          self.activity_checksum = checksum;
      }
  

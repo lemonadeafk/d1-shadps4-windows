@@ -56,6 +56,13 @@ SCRIPTS = {
         (8, "seq", DIALOGUE, 7, "seq_d_o1_20c"),
     ],
 }
+# The whole mission from its real start on the highway: nothing happens in the Wall until the
+# game starts reporting the Wall's own records (= the player has walked in and the host has
+# switched to that bubble); then the Wall sequence plays. 16 s = the host's follow-up frames
+# (D1_AH_SENSOR_FOLLOW_MAX=3) are over, so they cannot overwrite the script's values.
+SCRIPTS["mission"] = [(0, "wait", BREACH, 4, 0, 4 * 3600, "the player walks into the Wall"),
+                      (16, "seq", DIALOGUE, 34, "seq_fallen_scream_mid")] + SCRIPTS["wall"]
+SETTLE = {"wall": 50, "mission": 0}      # seconds after in_world before the first step
 
 
 def sequence_value(counter, start=0):
@@ -111,7 +118,7 @@ def main():
         if not run:
             raise SystemExit("the game never reached in_world")
         print("in world:", os.path.basename(run))
-        time.sleep(50)              # let the host's arrival frames and their repeats finish first
+        time.sleep(SETTLE[a.script])  # let the host's arrival frames and their repeats finish first
     import object_state
     import sense_reports
     watcher = sense_reports.Watcher(run, a.bubble, WORLD[2:])

@@ -86,6 +86,27 @@ index 89467c83..8759f705 100644
  s32 PS4_SYSV_ABI sceVoiceGetVolume();
  s32 PS4_SYSV_ABI sceVoiceInit();
  s32 PS4_SYSV_ABI sceVoiceInitHQ();
+diff --git a/src/core/signals.cpp b/src/core/signals.cpp
+index dcfd50a3..eaad425c 100644
+--- a/src/core/signals.cpp
++++ b/src/core/signals.cpp
+@@ -143,6 +143,16 @@ static LONG WINAPI SignalHandler(EXCEPTION_POINTERS* pExp) noexcept {
+         use_static_windows_guest_red_zone_protection ? static_protection_exception : true;
+     if (report_unhandled) {
+         LOG_CRITICAL(Debug, "Unhandled Exception code {:#x} at {}", code, address);
++        if (code == EXCEPTION_ACCESS_VIOLATION && pExp->ExceptionRecord->NumberParameters >= 2) {
++            // Which address the guest touched and how, with the registers that usually hold it.
++            const auto* ctx = pExp->ContextRecord;
++            LOG_CRITICAL(Debug,
++                         "Access violation: {} of {:#x}; rsp={:#x} rbp={:#x} rdi={:#x} rsi={:#x} "
++                         "rax={:#x} rcx={:#x} rdx={:#x} r12={:#x}",
++                         pExp->ExceptionRecord->ExceptionInformation[0] == 1 ? "write" : "read",
++                         pExp->ExceptionRecord->ExceptionInformation[1], ctx->Rsp, ctx->Rbp,
++                         ctx->Rdi, ctx->Rsi, ctx->Rax, ctx->Rcx, ctx->Rdx, ctx->R12);
++        }
+         Common::Singleton<Core::Emulator>::Instance()->Shutdown();
+     }
+ 
 diff --git a/src/shader_recompiler/frontend/control_flow_graph.cpp b/src/shader_recompiler/frontend/control_flow_graph.cpp
 index f38f0777..fc2a36fb 100644
 --- a/src/shader_recompiler/frontend/control_flow_graph.cpp
