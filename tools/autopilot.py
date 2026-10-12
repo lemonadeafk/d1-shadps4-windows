@@ -51,7 +51,7 @@ DESTINATIONS = {
               "--bubbles", "22", "--chosen", "0-21"],
         # :14 = the start bubble (the one holding the content of the mission's first phase).
         # PLAYER_TEAM=-1: a story mission has no teams; the slot's team must equal the client's.
-        env=["D1_AH_SENSOR_WORLD=0x80cb800d:14", "D1_AH_ACTIVITY_INDEX=165",
+        env=["D1_AH_SENSOR_WORLD=0x80cb800d:14", "D1_AH_ACTIVITY_INDEX=163",
              "D1_AH_SENSOR_PLAYER_TEAM=-1"],
         launch="launch_patrol.py"),
     # Experiments: the same mission started in another bubble (3 = its main combat area: 30
@@ -59,7 +59,7 @@ DESTINATIONS = {
     "guardian_rises_b3": dict(
         args=["--inworld", "--world", "act_cosmo_m0_highway", "--checksum", "0x8fe07299",
               "--bubbles", "22", "--chosen", "0-21"],
-        env=["D1_AH_SENSOR_WORLD=0x80cb800d:3", "D1_AH_ACTIVITY_INDEX=165",
+        env=["D1_AH_SENSOR_WORLD=0x80cb800d:3", "D1_AH_ACTIVITY_INDEX=163",
              "D1_AH_SENSOR_PLAYER_TEAM=-1"],
         launch="launch_patrol.py"),
     # ... and with the area's scripted objects (kind 4: lights, doors, grates, tripwires, chest)
@@ -67,7 +67,7 @@ DESTINATIONS = {
     "guardian_rises_b3_objects": dict(
         args=["--inworld", "--world", "act_cosmo_m0_highway", "--checksum", "0x8fe07299",
               "--bubbles", "22", "--chosen", "0-21"],
-        env=["D1_AH_SENSOR_WORLD=0x80cb800d:3", "D1_AH_ACTIVITY_INDEX=165",
+        env=["D1_AH_SENSOR_WORLD=0x80cb800d:3", "D1_AH_ACTIVITY_INDEX=163",
              "D1_AH_SENSOR_PLAYER_TEAM=-1",
              "D1_AH_SENSOR_KIND_VALUE=2:0x80800868:" + os.path.join(ROOT, "capture", "values", "member_exists.bin")
              + ",4:0x808007d9:" + os.path.join(ROOT, "capture", "values", "object_exists.bin"),
@@ -77,7 +77,7 @@ DESTINATIONS = {
     "guardian_rises_objects": dict(
         args=["--inworld", "--world", "act_cosmo_m0_highway", "--checksum", "0x8fe07299",
               "--bubbles", "22", "--chosen", "0-21"],
-        env=["D1_AH_SENSOR_WORLD=0x80cb800d:14", "D1_AH_ACTIVITY_INDEX=165",
+        env=["D1_AH_SENSOR_WORLD=0x80cb800d:14", "D1_AH_ACTIVITY_INDEX=163",
              "D1_AH_SENSOR_PLAYER_TEAM=-1",
              "D1_AH_SENSOR_KIND_VALUE=2:0x80800868:" + os.path.join(ROOT, "capture", "values", "member_exists.bin")
              + ",4:0x808007d9:" + os.path.join(ROOT, "capture", "values", "object_exists.bin"),
@@ -89,7 +89,7 @@ DESTINATIONS = {
     "guardian_rises_mission": dict(
         args=["--inworld", "--world", "act_cosmo_m0_highway", "--checksum", "0x8fe07299",
               "--bubbles", "22", "--chosen", "0-21"],
-        env=["D1_AH_SENSOR_WORLD=0x80cb800d:14", "D1_AH_ACTIVITY_INDEX=165",
+        env=["D1_AH_SENSOR_WORLD=0x80cb800d:14", "D1_AH_ACTIVITY_INDEX=163",
              "D1_AH_SENSOR_PLAYER_TEAM=-1",
              "D1_AH_SENSOR_KIND_VALUE=2:0x80800868:" + os.path.join(ROOT, "capture", "values", "member_exists.bin")
              + ",4:0x808007d9:" + os.path.join(ROOT, "capture", "values", "object_exists.bin"),
@@ -100,7 +100,7 @@ DESTINATIONS = {
     "guardian_rises_b3_quiet": dict(
         args=["--inworld", "--world", "act_cosmo_m0_highway", "--checksum", "0x8fe07299",
               "--bubbles", "22", "--chosen", "0-21"],
-        env=["D1_AH_SENSOR_WORLD=0x80cb800d:3", "D1_AH_ACTIVITY_INDEX=165",
+        env=["D1_AH_SENSOR_WORLD=0x80cb800d:3", "D1_AH_ACTIVITY_INDEX=163",
              "D1_AH_SENSOR_PLAYER_TEAM=-1",
              "D1_AH_SENSOR_KIND_VALUE=4:0x808007d9:" + os.path.join(ROOT, "capture", "values", "object_exists.bin"),
              "D1_AH_SENSOR_KIND_RESEQ=4", "D1_AH_SENSOR_REPEAT_MAX=8"],
@@ -108,7 +108,7 @@ DESTINATIONS = {
     "guardian_rises_b12": dict(
         args=["--inworld", "--world", "act_cosmo_m0_highway", "--checksum", "0x8fe07299",
               "--bubbles", "22", "--chosen", "0-21"],
-        env=["D1_AH_SENSOR_WORLD=0x80cb800d:12", "D1_AH_ACTIVITY_INDEX=165",
+        env=["D1_AH_SENSOR_WORLD=0x80cb800d:12", "D1_AH_ACTIVITY_INDEX=163",
              "D1_AH_SENSOR_PLAYER_TEAM=-1"],
         launch="launch_patrol.py"),
 }

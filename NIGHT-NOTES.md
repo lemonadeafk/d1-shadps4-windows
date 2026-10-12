@@ -1588,3 +1588,19 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   created Guardian would be sent into the opening again on a launch that grants 2837 - only the
   create launcher does. The banner text with activity 232 was not captured. Not run: the
   mission past the highway as a created Guardian.
+- CORRECTION (19:35, run OPEN2): the prologue's activity is 163, not 232. The game's own log:
+  "activity client requesting activity host startup [activity HASH(0x6e0dae89)
+  (activity_index=163 ...)]" (I read the table's u16 at the wrong offset). So
+  A Guardian Rises = activity 163 (0x6e0dae89), Restoration = 165. All mission launchers and the
+  test destination now publish 163. The world loads whatever number the host publishes, which is
+  why 232 and 165 both "worked".
+- OPEN2, sampled 4 x / s (read only): the activity selection record ([0x26A33E8]: u8 kind,
+  u16 activity @+2) is ffff/none until the prologue step ends, then {1, 163} until in_world
+  resets it. Kind 1 is written by the prologue step itself and is one of the two terms of
+  "cinematics suppressed", so the suppression during the mission load is BUILT IN for the
+  opening - the Ghost scene is not something those load steps were ever going to play.
+  Registered cinematics ([0x2697280]+0x1350): 2 while the intro film runs, 0 in the mission.
+  That leaves the mission's own kind-6 records (992bb471 sub 1 pf_104_res, sub 2
+  pf_104_res_fp) as the scene, i.e. started by the server - and section 47's blocker stands:
+  no cinematic is registered in-world for them to find.
+- Banner with the right activity: not captured yet (the frame I got shows only "NEW MISSION").
