@@ -1048,3 +1048,19 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   memory of the real mission for that room: dark until the lights come on, Fallen seen in the
   distance, and the gate to the rifle (Khvostov) is one you normally walk through - here it is
   shut with a Dreg behind it. = the room is in its unscripted initial state (section 45/49).
+
+## 53. Scripted-object STATE decoded (2026-10-11 20:00)
+- value+0x20 is a COUNT (0-3), followed by 3 typed entries of 0x40 bytes at value+0x30
+  (descriptor 0x80804153 is the element, array of 3): {u32 type tag @+0, body @+0x10}.
+- The applier FUN_00125250 calls each state component's handler; for the breach lights it is
+  FUN_005D2280: it scans the entries for type tag *[0x199A868] = 0x8080279A (36 bytes:
+  3 x {u32 set-counter, u32 snap-counter, f32 value}). Per channel: a larger snap-counter is
+  stored at obj+0x734/73C/744, a larger set-counter at +0x730/738/740 and then
+  FUN_005D15A0 / 5D16D0 / 5D1800(obj, snapped, value) runs (value clamped to 0..1, stored at
+  obj+0xA4, and +0x98 when snapped) followed by FUN_005D6860/6960/6A60 on the object.
+  (*[0x199A870] = 0x80802A74 is the same shape - the part-2 / reply schema.)
+- tools\object_state.py builds that value (D1_ORACLE_EXTRA_TAGS=0x8080279a so the encoder
+  knows the body schema) and injects it; the frame encodes (126 B). NOT yet tried on a game.
+- MISTAKE to avoid: the launch step refused ("an emulator is already running") but the script
+  went on and attached hwwatch to the USER's session. Check tasklist and stop before any
+  debugger or injection when the launch did not start a session of mine.
