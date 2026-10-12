@@ -22,9 +22,10 @@ STATE_TAG = 0x8080279A
 BASE = os.path.join(os.path.dirname(HERE), "capture", "values", "object_exists.bin")
 
 
-def image(seq, channels):
+def image(seq, channels, exists=True):
     img = bytearray(open(BASE, "rb").read())
     img[0:4] = struct.pack("<I", seq)
+    img[8] = 1 if exists else 0
     img[0x20:0x24] = struct.pack("<I", 1)                  # one typed entry
     img[0x30:0x34] = struct.pack("<I", STATE_TAG)
     body = b"".join(struct.pack("<IIf", seq, seq, v) for v in channels)
@@ -42,9 +43,10 @@ def main():
     ap.add_argument("--ch1", type=float, default=0.0)
     ap.add_argument("--ch2", type=float, default=0.0)
     ap.add_argument("--world", default="0x80cb800d")
+    ap.add_argument("--gone", action="store_true", help="send exists = 0 (the object is removed)")
     a = ap.parse_args()
     os.environ["D1_ORACLE_EXTRA_TAGS"] = hex(STATE_TAG)
-    img = image(a.seq, (a.ch0, a.ch1, a.ch2)).hex()
+    img = image(a.seq, (a.ch0, a.ch1, a.ch2), not a.gone).hex()
     ok = inject_sensor.inject(a.bubble, ["%s:%s:%s" % (a.group, s, img) for s in a.subs.split(",")],
                               world=a.world)
     print("sent" if ok else "NOT picked up")

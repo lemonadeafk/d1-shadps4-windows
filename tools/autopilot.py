@@ -71,7 +71,7 @@ DESTINATIONS = {
              "D1_AH_SENSOR_PLAYER_TEAM=-1",
              "D1_AH_SENSOR_KIND_VALUE=2:0x80800868:" + os.path.join(ROOT, "capture", "values", "member_exists.bin")
              + ",4:0x808007d9:" + os.path.join(ROOT, "capture", "values", "object_exists.bin"),
-             "D1_AH_SENSOR_KIND_RESEQ=4"],
+             "D1_AH_SENSOR_KIND_RESEQ=4", "D1_AH_SENSOR_REPEAT_MAX=8"],
         launch="launch_patrol.py"),
     # The normal start (bubble 14) with squads and scripted objects served.
     "guardian_rises_objects": dict(
@@ -82,6 +82,15 @@ DESTINATIONS = {
              "D1_AH_SENSOR_KIND_VALUE=2:0x80800868:" + os.path.join(ROOT, "capture", "values", "member_exists.bin")
              + ",4:0x808007d9:" + os.path.join(ROOT, "capture", "values", "object_exists.bin"),
              "D1_AH_SENSOR_KIND_RESEQ=4"],
+        launch="launch_patrol.py"),
+    # The Wall with its scripted objects but NO squads: a quiet room for object-state tests.
+    "guardian_rises_b3_quiet": dict(
+        args=["--inworld", "--world", "act_cosmo_m0_highway", "--checksum", "0x8fe07299",
+              "--bubbles", "22", "--chosen", "0-21"],
+        env=["D1_AH_SENSOR_WORLD=0x80cb800d:3", "D1_AH_ACTIVITY_INDEX=165",
+             "D1_AH_SENSOR_PLAYER_TEAM=-1",
+             "D1_AH_SENSOR_KIND_VALUE=4:0x808007d9:" + os.path.join(ROOT, "capture", "values", "object_exists.bin"),
+             "D1_AH_SENSOR_KIND_RESEQ=4", "D1_AH_SENSOR_REPEAT_MAX=8"],
         launch="launch_patrol.py"),
     "guardian_rises_b12": dict(
         args=["--inworld", "--world", "act_cosmo_m0_highway", "--checksum", "0x8fe07299",

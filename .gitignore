@@ -18,3 +18,4 @@ capture/world-namespace.tsv
 *.rar
 *.7z
 *.zip
+overnight/*.log

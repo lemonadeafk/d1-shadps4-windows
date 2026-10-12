@@ -22,7 +22,15 @@ WORLD = "0x80c7a005"          # city_tower_default1
 def inject(bubble, entries, world=WORLD, wait=True):
     os.makedirs(INJECT, exist_ok=True)
     name = os.path.join(INJECT, "%d.udt5" % int(time.time() * 1000))
-    r = subprocess.run([SENSOR_FRAME, world, str(bubble), name, *entries], capture_output=True, text=True)
+    args = list(entries)
+    if sum(len(e) for e in entries) > 20000:        # too long for a Windows command line
+        listing = name + ".entries"
+        with open(listing, "w") as f:
+            f.write(chr(10).join(entries))
+        args = ["@" + listing]
+    r = subprocess.run([SENSOR_FRAME, world, str(bubble), name, *args], capture_output=True, text=True)
+    if args != list(entries):
+        os.remove(args[0][1:])
     if r.returncode:
         raise SystemExit("sensor_frame failed: " + r.stdout + r.stderr)
     sent = name[:-5] + ".sent"

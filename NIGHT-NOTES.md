@@ -1064,3 +1064,21 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
 - MISTAKE to avoid: the launch step refused ("an emulator is already running") but the script
   went on and attached hwwatch to the USER's session. Check tasklist and stop before any
   debugger or injection when the launch did not start a session of mine.
+
+## 54. The Wall room plays out from the server (2026-10-11 21:00, runs OBJ3 / FLOW2)
+- Measured in a quiet room (autopilot destination guardian_rises_b3_quiet: objects, no squads):
+  o_breach_control (fc0e45a3 kind 4 sub 0) state channel 2 = the room's LIGHT LEVEL (0 dark,
+  0.5 half, 1.0 on; setting it back to 0 darkens the room again). Channels 0/1 on it and
+  channel 2 on the other stateful objects (subs 1,2,3,4,8) showed no change from the spawn view.
+- The gate behind the spawn point = o_breach_gating_back + o_breach_nut_back (subs 5,6, no
+  state component): a value with exists = 0 removes them -> the way to the rifle is open.
+- Squads on cue: member_exists values injected later spawn the room's 45 members then
+  (bipeds 1 -> 42); the Wall launcher no longer serves them on arrival.
+- tools\mission_director.py script "wall": music cue, Ghost lines, power 25/50/75/100 %, gate
+  opens, Fallen scream, the Fallen arrive, more Ghost lines. It waits 50 s after in_world (the
+  host's repeats, capped with D1_AH_SENSOR_REPEAT_MAX=8, would overwrite object states) and
+  only reacts to a run started after itself. sensor_frame accepts `@file` entry lists.
+- Also seen: enemies kill the player (GUARDIAN DOWN, killer card "Dreg / House of Devils",
+  death camera, respawn with square) - Desktop\GUARDIAN-DOWN-killed-by-dreg.png.
+- Timings are mine, not the mission's: the real triggers (player reaches pt_* volumes) are not
+  read yet, and the Ghost itself is still not at the player's side.
