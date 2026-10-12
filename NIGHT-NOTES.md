@@ -1147,3 +1147,20 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   marker shows at the screen edge and the GHOST speaker icon on its lines.
 - Still open: the Ghost stops there (no "fly to gun" - that is pm_nux_ghost_light_up_fly_to_gun,
   kind 28, which the client does not take from the host); timings are timers, not triggers.
+
+## 57. Real triggers: the game reports them (2026-10-11 22:50, runs TRG1)
+- udt 6 sensor_sense_update (client -> host) decoded far enough to use: a list of {name ref,
+  body}; name ref = 55 bits MSB-first: u32 group hash, 7 bits (kind + 1), 16 bits (sub + 0x8000).
+  Standing still the client reports kinds 1, 2 (squads/members), 3 (objective), 4 (objects),
+  12 (player slot). tools\sense_reports.py <run> <bubble> [kinds] prints them from the host log.
+- Walking on the Wall platform (the player is confined to ~x 386..408, y -787..-773 until the
+  gate goes): the client sent KIND 28 pm_nux_ghost_light_up_fly_to_gun (fc0e45a3 sub 123) when the
+  player crossed to the right-hand side (about x > 400), body 1111 0..0 11 ..., and again on
+  leaving (1001 0..0 01 ...). So pm_* records are player-driven events the client evaluates and
+  reports - that is why host values for them are ignored. No kind 29 (pt_*) report seen there.
+- mission_director has a "wait" step (until the game reports a record, or a timeout). The Wall
+  script now holds the power-up until that report (45 s fallback). Tested: walked in at 22:47:29,
+  the report arrived the same second and the rest of the sequence followed. Which script step
+  the real mission hangs on this report is my guess.
+- Objective obj_breach_fallen01 (kind 3 sub 20) reports change too (3-bit groups filling in as
+  squads register and when the player moves) - not decoded yet.

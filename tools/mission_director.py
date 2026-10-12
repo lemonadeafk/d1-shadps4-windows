@@ -29,6 +29,7 @@ BREACH = "0xfc0e45a3"           # the Wall room's own group (bubble 3)
 #   ("seq", group, sub, name)                       play a kind-5 sequence
 #   ("state", group, subs, (ch0, ch1, ch2), name)   scripted-object state channels (0..1)
 #   ("gone", group, subs, name)                     remove scripted objects
+#   ("wait", group, kind, sub, timeout, name)       until the GAME reports that record (udt 6), or timeout
 #   ("perf", group, sub, value file, name)          start an actor's performance (kind-40 sensor)
 #   ("spawn", group, name[, subs])                  squad members get their actors (all, or the listed subs)
 SCRIPTS = {
@@ -41,7 +42,9 @@ SCRIPTS = {
         (2, "seq", DIALOGUE, 0, "seq_m_cue1"),
         (1, "seq", DIALOGUE, 3, "seq_d_o1_10"),
         (8, "seq", DIALOGUE, 4, "seq_d_o1_15"),
-        (6, "state", BREACH, "0", (0.0, 0.0, 0.25), "power 25%"),
+        # the game itself reports when the player walks to the right-hand side of the platform
+        (0, "wait", BREACH, 28, 123, 45, "pm_nux_ghost_light_up_fly_to_gun"),
+        (1, "state", BREACH, "0", (0.0, 0.0, 0.25), "power 25%"),
         (1, "state", BREACH, "0", (0.0, 0.0, 0.5), "power 50%"),
         (1, "state", BREACH, "0", (0.0, 0.0, 0.75), "power 75%"),
         (1, "state", BREACH, "0,1,4,8", (0.0, 0.0, 1.0), "power on"),
@@ -102,6 +105,7 @@ def main():
     ap.add_argument("--counter", type=int, default=1)
     ap.add_argument("--no-wait", action="store_true")
     a = ap.parse_args()
+    run = newest_run()
     if not a.no_wait:
         run = wait_in_world()
         if not run:
@@ -109,11 +113,18 @@ def main():
         print("in world:", os.path.basename(run))
         time.sleep(50)              # let the host's arrival frames and their repeats finish first
     import object_state
+    import sense_reports
+    watcher = sense_reports.Watcher(run, a.bubble, WORLD[2:])
     os.environ["D1_ORACLE_EXTRA_TAGS"] = hex(object_state.STATE_TAG)
     seq = 100                       # scripted-object sequence numbers only ever rise
     for step in SCRIPTS[a.script]:
         delay, kind = step[0], step[1]
         time.sleep(delay)
+        if kind == "wait":
+            _, _, group, wkind, sub, timeout, name = step
+            hit = watcher.wait(int(group, 16), wkind, sub, timeout)
+            print(time.strftime("%H:%M:%S"), name, "reported by the game" if hit else "not reported in %d s - going on" % timeout, flush=True)
+            continue
         if kind == "seq":
             _, _, group, sub, name = step
             entries = ["%s:%d:%s" % (group, sub, sequence_value(a.counter))]
