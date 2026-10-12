@@ -2348,7 +2348,7 @@ index 0000000..00d53dd
 +    Ok(w)
 +}
 diff --git a/d1-server/crates/d1-responder/src/main.rs b/d1-server/crates/d1-responder/src/main.rs
-index 6a76336..4752431 100644
+index 6a76336..89de8d5 100644
 --- a/d1-server/crates/d1-responder/src/main.rs
 +++ b/d1-server/crates/d1-responder/src/main.rs
 @@ -2158,6 +2158,7 @@ const KNOBS: &[(&str, &str, &str)] = &[
@@ -2586,7 +2586,7 @@ index 6a76336..4752431 100644
                                                                          // ? RE-SEND DISABLED, 2026-08-08 - it was my own regression.
                                                                          // It was added to beat the state-1 race, but the answer is
                                                                          // a BASELINE (flags 0x01) and a second baseline on a family
-@@ -3438,6 +3600,19 @@ async fn main() -> Result<()> {
+@@ -3438,6 +3600,24 @@ async fn main() -> Result<()> {
                                                                                 body ({}B): {}", b.len(),
                                                                                b.iter().map(|x| format!("{x:02x}")).collect::<String>());
                                                                          Some(b)
@@ -2599,6 +2599,11 @@ index 6a76336..4752431 100644
 +                                                                        // first time a player equipped something (run
 +                                                                        // 20261011-000148-WIN-HUNTER).
 +                                                                        let b = d1_bap::investment_701_response_body();
++                                                                        // The request (bit-packed item SOID) for whoever owns the
++                                                                        // inventory state: tools\equip_service.py reads this line,
++                                                                        // swaps the item in and answers through D1_SWAP_TRIGGER.
++                                                                        warn!("      EQUIP REQUEST 403 body {}",
++                                                                              plain.get(8..).unwrap_or(&[]).iter().map(|x| format!("{x:02x}")).collect::<String>());
 +                                                                        warn!("      -> native-oracle 403 inventory_equip_item response body ({}B): {}",
 +                                                                              b.len(),
 +                                                                              b.iter().map(|x| format!("{x:02x}")).collect::<String>());
@@ -2606,7 +2611,7 @@ index 6a76336..4752431 100644
                                                                      } else if id == 701 {
                                                                          // 701's response schema 0x8080189B is the SAME
                                                                          // one-composite shape as 504's, so the client's own
-@@ -3950,6 +4125,10 @@ async fn main() -> Result<()> {
+@@ -3950,6 +4130,10 @@ async fn main() -> Result<()> {
                                                                                  d1_bap::matchmaking::MM_KIND_MATCHMAKING_CONFIGURATION, 0)
                                                                          }
                                                                      };
@@ -2617,7 +2622,7 @@ index 6a76336..4752431 100644
                                                                      let b = rsp.encode();
                                                                      warn!("      -> msg 43 matchmaking_core_response: kind={:?} nonce={:?} \
                                                                             f4 present={} ({}B body: {})",
-@@ -4267,6 +4446,70 @@ async fn main() -> Result<()> {
+@@ -4267,6 +4451,88 @@ async fn main() -> Result<()> {
                                                              // block so `family4_span` can only have been set on an
                                                              // EARLIER frame - the client has demonstrably processed the
                                                              // baseline by then, i.e. the descriptor is at state 3.
@@ -2654,10 +2659,28 @@ index 6a76336..4752431 100644
 +                                                                                Some(build_family_body(class, acct, chr, "")),
 +                                                                            _ => family_roots.get(&class).and_then(|r| build_roster_family_body(class, *r)),
 +                                                                        };
-+                                                                        let Some(body) = body else {
++                                                                        let Some(mut body) = body else {
 +                                                                            warn!("      ? SWAP: family {class} has no body to send (not subscribed / no fixtures)");
 +                                                                            continue;
 +                                                                        };
++                                                                        // Family 4: only the PROFILE changes in a loadout swap. Re-sending
++                                                                        // the item elements makes the client announce every item as newly
++                                                                        // acquired (measured 2026-10-12: loot toasts after an equip).
++                                                                        if class == d1_bap::QUEUEZ_FAMILY_ACCOUNT {
++                                                                            if let Some(objs) = d1_bap::queuez_span_objects(&body) {
++                                                                                let keep: Vec<_> = objs.iter()
++                                                                                    .filter(|o| o.instance_type == d1_bap::PROFILE_INSTANCE_TYPE)
++                                                                                    .collect();
++                                                                                if let (Some(first), false) = (objs.first(), keep.is_empty()) {
++                                                                                    let mut slim = body[..first.payload.0 - 16].to_vec();
++                                                                                    slim[21..25].copy_from_slice(&(keep.len() as u32).to_be_bytes());
++                                                                                    for o in keep {
++                                                                                        slim.extend_from_slice(&body[o.payload.0 - 16..o.payload.1]);
++                                                                                    }
++                                                                                    body = slim;
++                                                                                }
++                                                                            }
++                                                                        }
 +                                                                        let sent = swap_deltas.entry(class).or_insert(0);
 +                                                                        let earlier = u32::from(class == d1_bap::QUEUEZ_FAMILY_ACCOUNT && family4_invalidated
 +                                                                            && family4_invalidate_mode() != Family4Invalidate::Off);
@@ -2688,7 +2711,7 @@ index 6a76336..4752431 100644
                                                              let f4mode = family4_invalidate_mode();
                                                              if f4mode != Family4Invalidate::Off
                                                                  && conn_index == 0
-@@ -4726,7 +4969,7 @@ mod tests {
+@@ -4726,7 +4992,7 @@ mod tests {
          assert_eq!(b503.len(), 70, "the served 503 must be the ten-flag body");
          assert_eq!(b205.len(), 50, "the served 205 must be the ten-flag body");
          assert_eq!(

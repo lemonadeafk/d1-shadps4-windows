@@ -1349,3 +1349,27 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
 - Khvostov 7G-02 = content index 3598 (hash 0x1cba8a98, pattern 19, art 2364). What section 63
   handed over (2799) is "Timur's Lash"; 2090 is "Universal Remote". Launchers and
   loadout_variant.py now use 3598 - NOT yet seen in game.
+
+## 65. EQUIPPING FROM THE CHARACTER SCREEN WORKS (2026-10-12 12:30, runs EQUIP1 / EQUIP2, user at the controls)
+- Khvostov 7G-02 (content index 3598) seen in game: a rifle with a red-dot sight
+  (Desktop\RIFLE-khvostov-7G-02-correct-item.png). User has not yet said whether it is the model
+  they expect.
+- Investment 403 inventory_equip_item: the request body is simply the item SOID (8 bytes,
+  big-endian) + one byte. d1-responder logs "EQUIP REQUEST 403 body <hex>".
+- tools\equip_service.py watches that line, makes a VIEW of the served inventory in which the
+  requested item sorts first in its bucket (the builders take the first item of a bucket as the
+  equipped one), runs character build / profile build / build-peer + finish_character on it
+  (capture-rig\variants\live) and writes the D1_SWAP_TRIGGER file with FAMILIES=0,3,4.
+- USER, EQUIP1: pressed X on the spare Fatebringer -> weapons swapped in hand ~5 s after leaving
+  the menu; equipped The Last Word back the same way. EQUIP2: the menu icons swap after ~10 s
+  while the menu is open and stay swapped when it is reopened; Fatebringer in hand.
+- STILL WRONG: both swapped items are announced as newly acquired (loot pop-ups). Sending only
+  the PROFILE object in the family-4 delta (responder now filters the item elements out) did
+  not stop it, so the pop-up comes from the profile's item-slot change itself (slot =
+  {u16 content index, u64 SOID, 3 x u32 unknown}; cui::c_investment_character_loot_state
+  component is the likely reader). Also ~10 s is slow (three oracle builds + the keepalive wait).
+- d1_launch.py now sets D1_SWAP_TRIGGER and starts equip_service.py for every run (log:
+  <run>\equip-service.log). NOT yet launched this way.
+- RULE (user, 12:35): no remote control of the game while they use the PC - no key input, no
+  focus changes; autopilot launches steal focus too, so no launches by me until they say so.
+  gamewin.shot_bg captures the window without focus.

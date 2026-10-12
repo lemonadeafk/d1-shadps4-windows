@@ -501,6 +501,14 @@ def session(args):
             name, _, value = item.partition("=")
             env[name] = value
             log(f"server setting {name}={value}")
+        # Live loadout changes (NIGHT-NOTES sections 63, 65): the login server pushes a changed
+        # character to the running game when this file appears; tools\equip_service.py writes
+        # it to answer the character screen's equip requests.
+        swap = Path(__file__).resolve().parent / "inject" / "loadout-swap.txt"
+        swap.parent.mkdir(exist_ok=True)
+        for stale in (swap, swap.with_suffix(".done")):
+            stale.unlink(missing_ok=True)
+        env.setdefault("D1_SWAP_TRIGGER", str(swap))
         if args.inworld:
             # design/GUARDIAN-IN-WORLD.md §2 boot line, with the GEARED roster of the run the
             # operator played (140504-GEARED-RADV-11). The AH identity values must match
@@ -529,6 +537,10 @@ def session(args):
         procs.append(subprocess.Popen([str(RELEASE / "d1-responder.exe"), "--bind", ip,
                                        "--cert", str(crt), "--key", str(key)],
                                       cwd=REPO, env=env, stdout=open(run / "responder.log", "wb"),
+                                      stderr=subprocess.STDOUT, creationflags=flags))
+        # answers the character screen's equip requests for this run (ends with the launcher)
+        procs.append(subprocess.Popen([sys.executable, str(Path(__file__).resolve().parent / "tools" / "equip_service.py")],
+                                      stdout=open(run / "equip-service.log", "wb"),
                                       stderr=subprocess.STDOUT, creationflags=flags))
         if args.inworld:
             # Stub Activity Host. Defaults: world pvp_moonbase, activity 407 (worlds.rs/state.rs).
