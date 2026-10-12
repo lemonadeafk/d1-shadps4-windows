@@ -59,6 +59,35 @@ def pattern_of(content_index):
     return struct.unpack_from("<I", b, off)[0] if off + 4 <= len(b) else None
 
 
+def weapon_stats(content_index):
+    """The 16 x {i8 stat index, i32 value} the game expects for a weapon, or None.
+
+    The item definition lists its stats (0x8080190C: {u32 index, u32 value} pairs); the game's
+    own character-screen preview (FUN_0054EB40 -> FUN_0090EFD0, captured 2026-10-12) sends the
+    non-zero ones sorted by index, after two instance stats: 11 = attack and 0. For the
+    level-40 items served here attack = 200 + the definition's curve offset and stat 0 =
+    attack / 10 + 5 (fitted to The Last Word 270 / 32 and Praedyth's Revenge 260 / 31 only).
+    """
+    out = run(ORACLE, "art-arrangement", "show", "--index", str(content_index)).stdout
+    m = re.search(r"tag (0x[0-9a-f]+)", out)
+    if not m:
+        return None
+    tmp = os.path.join(tempfile.gettempdir(), "d1_def_%s.bin" % m.group(1))
+    run(ORACLE, "oodle", "entry", "--tag", m.group(1), "-o", tmp)
+    b = open(tmp, "rb").read()
+    at = b.find(bytes.fromhex("0c198080"))
+    if at < 8:
+        return None
+    count = struct.unpack_from("<Q", b, at - 8)[0]
+    pairs = [struct.unpack_from("<II", b, at + 8 + k * 8) for k in range(min(count, 32))]
+    curve = re.search(r"curve \(true, (\d+)\)", out)
+    attack = 200 + int(curve.group(1)) if curve else 200
+    stats = {0: attack // 10 + 5, 11: attack}
+    stats.update({i: v for i, v in pairs if v and i not in (0, 11)})
+    rows = sorted(stats.items())[:16]
+    return rows + [(-1, 0)] * (16 - len(rows))
+
+
 def main():
     img = os.path.join(tempfile.gettempdir(), "d1_finish.img")
     cache = {}
@@ -99,6 +128,16 @@ def main():
                     continue
                 struct.pack_into("<H", b, e + 0x0A, p)
                 print(f"  {os.path.basename(rel)}: ordinal {o} content index {ci} -> pattern {p}")
+                # 4. WEAPON STATS and perks (NIGHT-NOTES section 68): per weapon 16 x u16 perk
+                #    indices at equip + 0x5C0 and 16 x {i8 stat, i32 value} at equip + 0x6A0.
+                #    Zeros = sixteen copies of "stat 0 = 0": a 3-round magazine on everything.
+                k = o - WEAPON_ORDINALS[0]
+                stats = weapon_stats(ci)
+                if stats:
+                    struct.pack_into("<16H", b, equip + 0x5C0 + k * 0x20, *([0xFFFF] * 16))
+                    for n, (idx, val) in enumerate(stats):
+                        struct.pack_into("<bxxxi", b, equip + 0x6A0 + k * 0x80 + n * 8, idx, val)
+                    print(f"  {os.path.basename(rel)}: ordinal {o} stats {[s for s in stats if s[0] >= 0]}")
         open(img, "wb").write(b)
         r = run(OBJFILE, "encode", tag, img, path)
         print(f"{rel}: {r.stdout.strip()[:70]}")

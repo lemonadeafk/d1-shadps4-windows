@@ -62,6 +62,9 @@ def build(name, slots):
             if pattern is None or art is None:
                 raise SystemExit("content index %d: no pattern / art in its definition" % ci)
             struct.pack_into("<HHH", b, e + 8, ci, pattern, art)
+            k = ORDINALS[slot] - 6                  # this weapon's stats (finish_character 4.)
+            for n, (idx, val) in enumerate(fc.weapon_stats(ci) or []):
+                struct.pack_into("<bxxxi", b, equip + 0x6A0 + k * 0x80 + n * 8, idx, val)
         open(img, "wb").write(b)
         r = fc.run(fc.OBJFILE, "encode", tag, img, dst)
         if r.returncode:

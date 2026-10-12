@@ -1438,3 +1438,33 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   the Warlock in a combat world, the three Taken King subclasses in game.
 - Seen again: the weapon HUD reads 3 / 35 for a hand cannon - magazine sizes are not served
   (weapon stats), for every character.
+
+## 68. Weapon stats served: real magazine sizes (2026-10-12 13:55, runs WSTAT2-WSTAT4)
+- FUN_0090EFD0(ordinal, entry, .., perks, stats, desc) builds a weapon description from, per
+  weapon: 16 x u16 perk indices (-> FUN_0054B930 -> desc+0x2D8) and 16 x {i8 stat index,
+  i32 value @+4} (FUN_00289E40 spreads them by index; 20 gameplay stat slots via FUN_00552480
+  -> desc+0x58+i*0x20). In the character / peer view image they sit right after the 32 ability
+  perks: perks at equip + 0x5C0 + k*0x20, stats at equip + 0x6A0 + k*0x80 (k = 0 primary,
+  1 special, 2 heavy; equip = 0x250 character, 0x218 peer view). We shipped zeros = sixteen
+  times "stat 0 = 0" = a 3-round magazine on every gun.
+- GROUND TRUTH: the game computes the same block itself for the character-screen preview
+  (FUN_0054EB40, caller 0x552AB4). Exec breakpoint on 0x90EFD0 in my own session
+  (hwwatch.py --exec --dump Rcx:20 --dump R8:80 --dump Rsi:40; new --dump option) while the
+  character screen opened: The Last Word = (0,32) (11,270) (12,100) (14,10) (18,20) (20,50)
+  (21,40) (22,20) (23,80) (26,30) (27,100) (28,15), perks all 0xFFFF; Praedyth's Revenge =
+  (0,31) (11,260) (12,80) (13,20) (14,46) (18,80) (20,60) (21,52) (22,49) (23,59) (26,20)
+  (27,80) (28,40). (First attempt: a typo in the new option raised inside the debug loop and
+  the session died - the tool has no cleanup on an exception.)
+- RULE: the item definition's stat list (0x8080190C, {u32 index, u32 value}) minus the zero
+  values, sorted by index, preceded by two instance stats: 11 = attack and 0. Fitted on those
+  two weapons only: attack = 200 + the definition's curve offset (level-40 items), stat 0 =
+  attack / 10 + 5. finish_character.weapon_stats() reproduces both captures exactly.
+- finish_character.py step 4 writes them for the three weapons (so new_guardian and
+  equip_service get them too); loadout_variant.py writes them for a swapped-in weapon.
+- RESULT (Moon, zero pokes): The Last Word 8 / 57 (was 3 / 35); Khvostov 7G-02 after the live
+  hand-over 25 / 134 (was 12 / 110) (Desktop\STATS-*.png).
+- Found on the way: if the weapon in hand becomes a dead slot through a live swap (I was
+  holding the special when the Khvostov-only loadout arrived), triangle no longer switches
+  away from it. Not seen in the mission flow, where the primary is in hand.
+- Open: weapon perks (all "none"), attack / stat 0 for other levels, armour stats
+  (Intellect / Discipline / Strength read 0).

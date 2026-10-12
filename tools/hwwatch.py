@@ -138,6 +138,8 @@ def main():
     ap.add_argument("--write-only", action="store_true")
     ap.add_argument("--press", default=None)
     ap.add_argument("--exec", action="store_true", help="execution breakpoint (addr = instruction)")
+    ap.add_argument("--dump", action="append", metavar="REG:HEXLEN",
+                    help="with --exec: also record the memory a register points at (e.g. R8:80)")
     ap.add_argument("--value", default=None, help="hex u32: keep a write hit only if the address now holds it")
     a = ap.parse_args()
     pid = winproc.emu_pids()[0]
@@ -224,6 +226,11 @@ def main():
                             REGLOG[-1]["mem_r14"] = (winproc_read(pid, ctx.R14, 0x60) or b"").hex()
                             REGLOG[-1]["mem_rdi"] = (winproc_read(pid, ctx.Rdi, 0x60) or b"").hex()
                             REGLOG[-1]["mem_rsi"] = (winproc_read(pid, ctx.Rsi, 0x60) or b"").hex()
+                            for spec in a.dump or []:       # --dump R8:80 -> memory at that register
+                                reg, _, n = spec.partition(":")
+                                val = getattr(ctx, reg)
+                                REGLOG[-1][reg] = val
+                                REGLOG[-1]["dump_" + reg] = (winproc_read(pid, val, int(n or "40", 16)) or b"").hex()
                             if a.exec:
                                 ctx.EFlags |= 0x10000  # RF: do not re-trap on the same instruction
                         ctx.Dr6 = 0
