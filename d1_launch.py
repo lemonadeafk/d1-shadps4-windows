@@ -509,6 +509,8 @@ def session(args):
         for stale in (swap, swap.with_suffix(".done")):
             stale.unlink(missing_ok=True)
         env.setdefault("D1_SWAP_TRIGGER", str(swap))
+        # Character creation (section 66): tools\creation_service.py (started below) builds the
+        # Guardian the player chose and pushes it through the same file.
         if args.inworld:
             # design/GUARDIAN-IN-WORLD.md §2 boot line, with the GEARED roster of the run the
             # operator played (140504-GEARED-RADV-11). The AH identity values must match
@@ -541,6 +543,9 @@ def session(args):
         # answers the character screen's equip requests for this run (ends with the launcher)
         procs.append(subprocess.Popen([sys.executable, str(Path(__file__).resolve().parent / "tools" / "equip_service.py")],
                                       stdout=open(run / "equip-service.log", "wb"),
+                                      stderr=subprocess.STDOUT, creationflags=flags))
+        procs.append(subprocess.Popen([sys.executable, str(Path(__file__).resolve().parent / "tools" / "creation_service.py"), str(run)],
+                                      stdout=open(run / "creation-service.log", "wb"),
                                       stderr=subprocess.STDOUT, creationflags=flags))
         if args.inworld:
             # Stub Activity Host. Defaults: world pvp_moonbase, activity 407 (worlds.rs/state.rs).

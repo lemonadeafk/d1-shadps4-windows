@@ -1382,3 +1382,35 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   (Desktop\EQUIP-fatebringer-equipped-in-menu.png). The launcher-started equip service
   (<run>\equip-service.log) answered both. Character screen cursor: from the centre, hold
   left 0.6 s + up 0.2 s, then right 0.2 s + down 0.1 s = the primary slot; left 0.17 s = spare.
+
+## 66. CHARACTER CREATION FEEDS THE SERVED CHARACTER (2026-10-12 13:20, runs CREATE3-CREATE7)
+- The game's investment 501 already carries everything chosen: identity {race, gender, class}
+  and the 36-byte customization block 0x8080181A (upstream decodes it into
+  <run>\create-character-<t>.txt). Until now the server answered and then served the same
+  pre-built Hunter whatever was picked.
+- tools\new_guardian.py <name> --class 0|1|2 --race --gender [--custom hex]: mints item elements
+  from the served Hunter's (decode 0x80801732, set the content index @+0x24, `inventory rebuild`
+  derives talent grid etc.), runs character build / profile build / build-peer with the
+  identity, finish_character, and copies the customization block to object +0x0C of character,
+  profile and peer view. Gear = loadouts\y1-<class>-vault-of-glass.json + a spare Khvostov;
+  ~16-19 s. Subclass content indices: 708 Bladedancer, 709 Gunslinger, 710 Striker (grid 132),
+  713 Voidwalker. Class byte: 0 Titan, 1 Hunter, 2 Warlock.
+- tools\creation_service.py <run> (started by d1_launch.py) watches for the transcript, builds
+  capture-rig\guardians\created and writes the D1_SWAP_TRIGGER file with FAMILIES=0,3,4 and
+  FAMILY4=all (new responder option: also send the item elements).
+- DEAD END: holding the 501 answer until the build is done (responder D1_CREATE_READY, still in
+  the code, no longer set) crashed the game the moment the answer came, 19 s late (CREATE3:
+  jump to 0 in SceFiosCallback, rdi = 0x8004c0bc). Same objects with no wait: fine (CREATE5).
+  So the answer goes out at once and the new Guardian replaces the default by live push.
+- RESULT, CREATE7 (full Tower launch with D1_EMPTY_ROSTER=1; I picked WARLOCK, the creator's
+  default look came out as Exo male): no crash; in the Tower the player is an Exo Warlock (Exo
+  head visible - the wear-helmet byte is the creator's 0), robes, weapons on the back;
+  character screen: Voidwalker, Vision of Confluence, Praetorian Foil, Hezen Vengeance, the
+  Hezen Lords set, Warlock silhouette (Desktop\CREATED-exo-warlock-*.png).
+- CREATE6 (--stop-at signin, no --director): same Warlock but padlocked weapon slots and no
+  model - that launch mode does not grant the slot unlock flags; not a builder problem.
+- NOT DONE: level 1 + real starter gear (the build is level 40 with the class's raid set);
+  abilities and subclass nodes for Titan / Warlock (finish_character's rows are the
+  Bladedancer's - left empty, so no sprint / grenade / correct super); the creator's own
+  face / hair choices were not varied in the tests; the game goes creation -> orbit, not into
+  the opening cinematic and first mission; the appearance preview in the creator is black.

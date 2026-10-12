@@ -2348,10 +2348,45 @@ index 0000000..00d53dd
 +    Ok(w)
 +}
 diff --git a/d1-server/crates/d1-responder/src/main.rs b/d1-server/crates/d1-responder/src/main.rs
-index 6a76336..89de8d5 100644
+index 6a76336..316ec45 100644
 --- a/d1-server/crates/d1-responder/src/main.rs
 +++ b/d1-server/crates/d1-responder/src/main.rs
-@@ -2158,6 +2158,7 @@ const KNOBS: &[(&str, &str, &str)] = &[
+@@ -1211,6 +1211,34 @@ fn character_lifecycle_reply(id: u16, args: &[u8], wire_body: &[u8]) -> Option<V
+             if let Some(p) = path {
+                 warn!("      ? create-character transcript written: {p}");
+             }
++            // ? `D1_CREATE_READY=<file>`: hold the answer until whoever builds the new Guardian
++            // from that transcript (tools\creation_service.py) has written this file - `NAME=value`
++            // lines that replace the content variables (D1_CHARACTER_FILE, D1_PROFILE_FILE,
++            // D1_INVENTORY, D1_ROSTER_DIR). The client signs the character in as soon as it has
++            // the SOID, so the objects it will then be served must exist first.
++            if let Some(ready) = std::env::var_os("D1_CREATE_READY").map(std::path::PathBuf::from) {
++                let wait = env_num::<u64>("D1_CREATE_READY_SECS", 90);
++                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(wait);
++                loop {
++                    if let Ok(text) = std::fs::read_to_string(&ready) {
++                        for line in text.lines() {
++                            if let Some((k, v)) = line.split_once('=') {
++                                #[allow(unused_unsafe)]
++                                unsafe { std::env::set_var(k.trim(), v.trim()) };
++                            }
++                        }
++                        let _ = std::fs::rename(&ready, ready.with_extension("done"));
++                        warn!("      ? CREATE CHARACTER: the new Guardian's objects are ready - answering");
++                        break;
++                    }
++                    if std::time::Instant::now() > deadline {
++                        warn!("      ? CREATE CHARACTER: {} did not appear in {wait} s - answering with \
++                               the objects already configured", ready.display());
++                        break;
++                    }
++                    std::thread::sleep(std::time::Duration::from_millis(250));
++                }
++            }
+             CREATED_CHARACTER_SOID.store(soid, std::sync::atomic::Ordering::Relaxed);
+             CHARACTER_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
+             Some(cl::create_character_response_body(soid))
+@@ -2158,6 +2186,7 @@ const KNOBS: &[(&str, &str, &str)] = &[
      ("D1_AH_IP", "<D1_BAP_IP>", "? address msg 17 resolves to"),
      ("D1_AH_PORT", "<D1_BAP_PORT>", "? port msg 17 resolves to; defaults to the primary BAP port"),
      ("D1_AH_ENDIAN", "be", "? msg 17 byte order. `le` REPRODUCES A FAILED RUN - see the note at the send site"),
@@ -2359,7 +2394,7 @@ index 6a76336..89de8d5 100644
      ("D1_MM_CONFIG", "1", "? answer BAP msg 42 with msg 43 (matchmaking configuration, f4 present)"),
      ("D1_AH_PUSH_100", "0", "? send the msg 100 push. ? UNBLOCKED - header class 6 is 32 bytes"),
      ("D1_AH_PUSH_102", "0", "? attempt the msg 102 push. Refused: 102 is not on the accept-set"),
-@@ -2201,6 +2202,8 @@ const KNOBS: &[(&str, &str, &str)] = &[
+@@ -2201,6 +2230,8 @@ const KNOBS: &[(&str, &str, &str)] = &[
      ("D1_503_RAW", "<unset>", "exact 503 argument bitstream, hex"),
      ("D1_503_FIELDS", "<unset>", "503 field probe, value:bits pairs"),
      ("D1_205_RAW", "<unset>", "? 205 body override - MUST agree with D1_503_RAW on the shared 0x80801941"),
@@ -2368,7 +2403,7 @@ index 6a76336..89de8d5 100644
      ("D1_504_RAW", "<unset>", "504 login_character body override"),
      ("D1_701_RAW", "<unset>", "701 body override"),
      ("D1_702_RAW", "<unset>", "702 body override"),
-@@ -2283,6 +2286,127 @@ fn shared_0x80801941_agrees(b503: &[u8], b205: &[u8]) -> Option<bool> {
+@@ -2283,6 +2314,127 @@ fn shared_0x80801941_agrees(b503: &[u8], b205: &[u8]) -> Option<bool> {
      Some(b503[21..] == b205[1..])
  }
  
@@ -2496,7 +2531,7 @@ index 6a76336..89de8d5 100644
  /// ??? **The 503 argument bitstream this responder actually sends.**
  ///
  /// The 503 arm and [`check_205_503_agree`] both call this, and that is the entire point. Before
-@@ -2319,7 +2443,17 @@ fn served_503_body() -> Vec<u8> {
+@@ -2319,7 +2471,17 @@ fn served_503_body() -> Vec<u8> {
          return d1_bap::investment_503_fields(&fields);
      }
      // ? THE DEFAULT: ten unlock flags at value 2, with the run's own account SOID spliced in.
@@ -2515,7 +2550,7 @@ index 6a76336..89de8d5 100644
  }
  
  /// The 205 response body this responder actually sends. Same contract as [`served_503_body`].
-@@ -2329,7 +2463,16 @@ fn served_205_body() -> Vec<u8> {
+@@ -2329,7 +2491,16 @@ fn served_205_body() -> Vec<u8> {
          warn!("      205 RAW BODY override ({}B) - the ten-flag default is NOT in play", raw.len());
          return raw;
      }
@@ -2533,7 +2568,7 @@ index 6a76336..89de8d5 100644
  }
  
  // ???????????????????????????????????????????????????????????????????????????????????????????????
-@@ -2463,7 +2606,7 @@ fn run_controls() -> usize {
+@@ -2463,7 +2634,7 @@ fn run_controls() -> usize {
            format!("[{} flags, missing {missing:?}]", flags.len()));
      let b503 = served_503_body();
      check("P0 205/503 agree on the shared 0x80801941",
@@ -2542,7 +2577,7 @@ index 6a76336..89de8d5 100644
  
      // ?? ?? P2. THE CONTROL AXIS, stated before the assertions:
      //
-@@ -2572,8 +2715,22 @@ fn run_controls() -> usize {
+@@ -2572,8 +2743,22 @@ fn run_controls() -> usize {
  }
  
  fn check_205_503_agree() {
@@ -2567,7 +2602,7 @@ index 6a76336..89de8d5 100644
      let (b503, b205) = (&b503[..], &b205[..]);
  
      // ?? WHAT THE OLD GUARD COULD NOT SAY: two byte-identical **empty** bodies agree perfectly.
-@@ -2850,6 +3007,10 @@ async fn main() -> Result<()> {
+@@ -2850,6 +3035,10 @@ async fn main() -> Result<()> {
                                      // task-8 bug happened, and a memcpy cannot drop a field.
                                      let mut family4_span: Option<Vec<u8>> = None;
                                      let mut family4_invalidated = false;
@@ -2578,7 +2613,7 @@ index 6a76336..89de8d5 100644
                                      // ? THE STATE-1 RACE. `historicaldocs/design/subscription-race-verdict.md`:
                                      // the client's manager tick sends 0x000C at 0x56A887 and
                                      // UNCONDITIONALLY writes descriptor state 2 at 0x56A8A7; a later
-@@ -3247,6 +3408,7 @@ async fn main() -> Result<()> {
+@@ -3247,6 +3436,7 @@ async fn main() -> Result<()> {
                                                                          // So this is only ARMED here; it is written after the
                                                                          // ACK goes out.
                                                                          answer_family = Some((class, root, i.sequence));
@@ -2586,7 +2621,7 @@ index 6a76336..89de8d5 100644
                                                                          // ? RE-SEND DISABLED, 2026-08-08 - it was my own regression.
                                                                          // It was added to beat the state-1 race, but the answer is
                                                                          // a BASELINE (flags 0x01) and a second baseline on a family
-@@ -3438,6 +3600,24 @@ async fn main() -> Result<()> {
+@@ -3438,6 +3628,24 @@ async fn main() -> Result<()> {
                                                                                 body ({}B): {}", b.len(),
                                                                                b.iter().map(|x| format!("{x:02x}")).collect::<String>());
                                                                          Some(b)
@@ -2611,7 +2646,7 @@ index 6a76336..89de8d5 100644
                                                                      } else if id == 701 {
                                                                          // 701's response schema 0x8080189B is the SAME
                                                                          // one-composite shape as 504's, so the client's own
-@@ -3950,6 +4130,10 @@ async fn main() -> Result<()> {
+@@ -3950,6 +4158,10 @@ async fn main() -> Result<()> {
                                                                                  d1_bap::matchmaking::MM_KIND_MATCHMAKING_CONFIGURATION, 0)
                                                                          }
                                                                      };
@@ -2622,7 +2657,7 @@ index 6a76336..89de8d5 100644
                                                                      let b = rsp.encode();
                                                                      warn!("      -> msg 43 matchmaking_core_response: kind={:?} nonce={:?} \
                                                                             f4 present={} ({}B body: {})",
-@@ -4267,6 +4451,88 @@ async fn main() -> Result<()> {
+@@ -4267,6 +4479,93 @@ async fn main() -> Result<()> {
                                                              // block so `family4_span` can only have been set on an
                                                              // EARLIER frame - the client has demonstrably processed the
                                                              // baseline by then, i.e. the descriptor is at state 3.
@@ -2642,10 +2677,15 @@ index 6a76336..89de8d5 100644
 +                                                                {
 +                                                                    let _ = std::fs::rename(&path, path.with_extension("done"));
 +                                                                    let mut families: Vec<u32> = vec![0, 3, 4];
++                                                                    let mut family4_all = false;
 +                                                                    for line in text.lines() {
 +                                                                        let Some((k, v)) = line.split_once('=') else { continue };
 +                                                                        if k.trim() == "FAMILIES" {
 +                                                                            families = v.split(',').filter_map(|x| x.trim().parse().ok()).collect();
++                                                                        } else if k.trim() == "FAMILY4" {
++                                                                            // `FAMILY4=all`: send the item elements too (a NEW Guardian's
++                                                                            // items really are new); the default sends the profile only.
++                                                                            family4_all = v.trim() == "all";
 +                                                                        } else {
 +                                                                            #[allow(unused_unsafe)]
 +                                                                            unsafe { std::env::set_var(k.trim(), v.trim()) };
@@ -2666,7 +2706,7 @@ index 6a76336..89de8d5 100644
 +                                                                        // Family 4: only the PROFILE changes in a loadout swap. Re-sending
 +                                                                        // the item elements makes the client announce every item as newly
 +                                                                        // acquired (measured 2026-10-12: loot toasts after an equip).
-+                                                                        if class == d1_bap::QUEUEZ_FAMILY_ACCOUNT {
++                                                                        if class == d1_bap::QUEUEZ_FAMILY_ACCOUNT && !family4_all {
 +                                                                            if let Some(objs) = d1_bap::queuez_span_objects(&body) {
 +                                                                                let keep: Vec<_> = objs.iter()
 +                                                                                    .filter(|o| o.instance_type == d1_bap::PROFILE_INSTANCE_TYPE)
@@ -2711,7 +2751,7 @@ index 6a76336..89de8d5 100644
                                                              let f4mode = family4_invalidate_mode();
                                                              if f4mode != Family4Invalidate::Off
                                                                  && conn_index == 0
-@@ -4726,7 +4992,7 @@ mod tests {
+@@ -4726,7 +5025,7 @@ mod tests {
          assert_eq!(b503.len(), 70, "the served 503 must be the ten-flag body");
          assert_eq!(b205.len(), 50, "the served 205 must be the ten-flag body");
          assert_eq!(
