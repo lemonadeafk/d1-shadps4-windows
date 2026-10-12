@@ -1324,3 +1324,28 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
 - Open: unarmed shows the open hand WITH the Ghost (pattern 0), probably not what the real
   mission shows; 12-round magazine looks small (weapon stats are not served); the inventory
   (family 4) still lists the old weapons.
+
+## 64. Item names from the game files (2026-10-12 midday) - course change
+- USER (RISESWALL run): the handed-over rifle was not the Khvostov; the chest that should give
+  the shotgun gives nothing; spawn-to-gate takes far longer than the real game. User's question:
+  should the mission be scripted before real character creation and the bigger milestones?
+  AGREED ORDER: (1) item names from the game files, (2) real inventory / equipping on the live
+  loadout push, (3) character creation from scratch feeding the served character, (4) back to
+  the mission, driven by the game's triggers rather than timers.
+- TEXT FORMAT. String bank = class 0x808008BE: part count @+0x60, parts @+0x70, 0x20 B each
+  {i64 self-relative data offset @+8, u32 hash @+0x10 (unset), u16 bytes, u16 chars, u16 key};
+  each UTF-8 byte is stored minus key. String container = class 0x8080035A: {u64 size,
+  u64 count, .., 13 language bank tags @+0x18 (English first; 0x80ab037e = none), count x u32
+  hash at the end}; a hash's position = the part index in every language's bank.
+- ITEM -> NAME. Investment-globals root (ps4_investment_globals_012f_3): list 0x808033E8 =
+  one display-record tag per CONTENT INDEX (7544 x 16 B, tag @+8); display record (class
+  0x80803484) +0x78 = {u32 container index, u32 hash} = name (+0x80, +0x88: more strings);
+  container index -> tag via list 0x80803473 (817 x 24 B, tag @+0x10). The 5884-row
+  {hash, tag} table in block 231 is a STALE older item table - not the link.
+- tools\game_strings.py <package substring> dumps every string (574,466 in investment_globals);
+  `tools\game_strings.py items` writes capture-rig\item-names.tsv (7292 of 7544 named). Checked
+  against the game's own character screen: 2078 The Last Word, 2228 Praedyth's Revenge,
+  2224 Corrective Measure.
+- Khvostov 7G-02 = content index 3598 (hash 0x1cba8a98, pattern 19, art 2364). What section 63
+  handed over (2799) is "Timur's Lash"; 2090 is "Universal Remote". Launchers and
+  loadout_variant.py now use 3598 - NOT yet seen in game.

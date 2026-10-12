@@ -8,7 +8,7 @@ rem You start UNARMED and are handed the Khvostov when you reach the rifle: the 
 rem pushes the changed loadout to the running game (tools\loadout_variant.py, section 63).
 set VARIANTS=C:\d1server\d1preservation\capture-rig\variants
 python "%~dp0tools\loadout_variant.py" unarmed --unarmed >nul
-python "%~dp0tools\loadout_variant.py" khvostov --primary 2799 --special none --heavy none >nul
+python "%~dp0tools\loadout_variant.py" khvostov --primary 3598 --special none --heavy none >nul
 del "%~dp0inject\loadout-swap.txt" 2>nul
 rem The Ghost's dialogue is served once you are in the world (tools\mission_director.py).
 start "mission director" /min python "%~dp0tools\mission_director.py"

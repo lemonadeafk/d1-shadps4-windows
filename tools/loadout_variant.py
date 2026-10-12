@@ -1,4 +1,4 @@
-r"""Build a variant of the served Hunter's weapons, for a mid-session loadout change.
+﻿r"""Build a variant of the served Hunter's weapons, for a mid-session loadout change.
 
     python tools\loadout_variant.py <name> [--primary CI] [--special CI|none] [--heavy CI|none]
                                            [--unarmed]
@@ -27,7 +27,7 @@ import finish_character as fc  # noqa: E402
 
 VARIANTS = os.path.join(fc.REPO, "capture-rig", "variants")
 ORDINALS = {"primary": 6, "special": 7, "heavy": 8}
-KHVOSTOV = 2799      # item hash 0xa5742ef6, pattern 5, art 1260
+KHVOSTOV = 3598      # "Khvostov 7G-02", item hash 0x1cba8a98 (tools\game_strings.py items)
 
 
 def art_of(ci):
