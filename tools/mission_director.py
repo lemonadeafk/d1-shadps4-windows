@@ -78,18 +78,20 @@ _WALL = [
     # player trigger (kind 29 sub 35), once the server enables it, makes the game send udt 18
     # "incident" for as long as the player stands at the rifle. The server then takes the
     # rifle away and moves the mission on. NIGHT-NOTES section 62.
+    # o2_90 = "I hope you know how to use that thing" (the user identified the recording), so it
+    # plays at the pickup; o2_70 / o2_80 ("they're coming for us") are the urging before it.
     (1, "trigger", 35, True, "rifle trigger armed"),
+    (4, "seq", DIALOGUE, 33, "seq_fallen_scream_far"),
+    _line(3, 17, "o2_70"),
+    _line(8, 18, "o2_80"),
     (0, "incident", 4 * 3600, "the player reaches the rifle"),
     (0, "trigger", 35, False, "rifle trigger disarmed"),
     (0, "gone", ACTIVITY, "6", "the rifle is taken"),
     (1, "objective", 11, HIDDEN, "GRAB THE RIFLE done"),
-    _line(1, 17, "o2_70"),
+    _line(0, 19, "o2_90"),
     (4, "objective", 14, ACTIVE, "objective: FIGHT THROUGH THE WALL"),
-    (2, "seq", DIALOGUE, 33, "seq_fallen_scream_far"),
-    (3, "spawn", BREACH, "the Fallen arrive"),
-    _line(8, 18, "o2_80"),
-    _line(9, 19, "o2_90"),
-    _line(8, 20, "o2_95"),
+    (2, "spawn", BREACH, "the Fallen arrive"),
+    _line(6, 20, "o2_95"),
 ]
 SCRIPTS = {
     # started inside the Wall (the "inside the Wall" launcher)
