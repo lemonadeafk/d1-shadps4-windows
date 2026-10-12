@@ -89,6 +89,24 @@ def build(equipped):
     run("character", "build", "--inventory", gear, "--identity", "0,0,1", "--out", char)
     run("profile", "build", "--inventory", full, "--identity", "0,0,1", "--all-content",
         "--progression", "117:400000", "--out", prof)
+    if os.environ.get("EQUIP_SLOTS") != "move":
+        # The items KEEP their inventory slots; only the equipped list (20 SOIDs at +0x2B80,
+        # indexed by equip ordinal) changes. Moving the two items between slots made the game
+        # announce both as newly acquired (section 65). So: the profile built from the served
+        # order, with the equipped list of the one built from the view.
+        import tempfile
+        img_view = os.path.join(tempfile.gettempdir(), "d1_equip_view.img")
+        img = os.path.join(tempfile.gettempdir(), "d1_equip.img")
+        fc.run(fc.OBJFILE, "decode", "0x80801743", prof, img_view)
+        run("profile", "build", "--inventory", INVENTORY, "--identity", "0,0,1", "--all-content",
+            "--progression", "117:400000", "--out", prof)
+        fc.run(fc.OBJFILE, "decode", "0x80801743", prof, img)
+        b = bytearray(open(img, "rb").read())
+        b[0x2B80:0x2B80 + 160] = open(img_view, "rb").read()[0x2B80:0x2B80 + 160]
+        open(img, "wb").write(b)
+        r = fc.run(fc.OBJFILE, "encode", "0x80801743", img, prof)
+        if r.returncode:
+            raise SystemExit("encode profile: %s%s" % (r.stdout, r.stderr))
     run("character", "build-peer", "--inventory", gear, "--identity", "0,0,1", "--with-family2",
         "--out-dir", roster)
     peer = glob.glob(os.path.join(roster, "f0t1-*.bin"))[0]
