@@ -26,6 +26,7 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import finish_character as fc  # noqa: E402
+import talent_grid  # noqa: E402
 
 RIG = os.path.join(fc.REPO, "capture-rig")
 TEMPLATE = os.path.join(RIG, "inventory-hunter-full")
@@ -77,12 +78,14 @@ def build(name, cls, race, gender, custom=None):
     items = {SLOT_FILE[e["slot"]]: ci_of[e["item"]["hash"]] for e in loadout["equipped"] if e["slot"] in SLOT_FILE}
     items[SPARE[0]] = SPARE[1]
     for stem, ci in items.items():
-        def set_item(b, ci=ci, stem=stem):
-            struct.pack_into("<H", b, 0x24, ci)
-            if stem == "00-Subclass" and cls != 1:
-                b[0x5A:0x5A + 36] = bytes(36)     # talent nodes off: the served set is Bladedancer's
-        edit(ELEMENT, os.path.join(inv, stem + ".bin"), set_item)
+        edit(ELEMENT, os.path.join(inv, stem + ".bin"), lambda b, ci=ci: struct.pack_into("<H", b, 0x24, ci))
     run("inventory", "rebuild", "--dir", inv)
+    # the subclass's talent grid (the rebuild derives its index from the item) decides the
+    # active nodes and the abilities: tools\talent_grid.py
+    grid = []
+    edit(ELEMENT, os.path.join(inv, "00-Subclass.bin"), lambda b: grid.append(struct.unpack_from("<H", b, 0x58)[0]))
+    active = talent_grid.default_active(grid[0])
+    run("inventory", "rebuild", "--dir", inv, "--subclass-nodes", ",".join(str(n) for n in active))
     # the art table is one file for every served set: write it over all of them
     union = os.path.join(tempfile.gettempdir(), "d1_art_union")
     shutil.rmtree(union, ignore_errors=True)
@@ -93,7 +96,7 @@ def build(name, cls, race, gender, custom=None):
             shutil.copyfile(p, os.path.join(union, "%03d-%s" % (n, os.path.basename(p).split("-", 1)[1])))
             n += 1
     run("art-arrangement", "write", "--inventory", union)
-    run("inventory", "rebuild", "--dir", inv)
+    run("inventory", "rebuild", "--dir", inv, "--subclass-nodes", ",".join(str(n) for n in active))
     gear = os.path.join(out, "inventory-gear")       # character / peer view refuse the emblem element
     shutil.copytree(inv, gear, ignore=lambda d, names: [x for x in names if "Emblems" in x])
     ident = "%d,%d,%d" % (race, gender, cls)
@@ -106,8 +109,7 @@ def build(name, cls, race, gender, custom=None):
     peer = glob.glob(os.path.join(roster, "f0t1-*.bin"))[0]
     saved = fc.FILES, fc.ABILITIES
     fc.FILES = [(PEER, peer, 0x218), (CHARACTER, char, 0x250), (PROFILE, prof, None)]
-    if cls != 1:
-        fc.ABILITIES = None         # the ability rows in finish_character are the Bladedancer's
+    fc.ABILITIES = talent_grid.abilities(grid[0], active)
     try:
         fc.main()
     finally:

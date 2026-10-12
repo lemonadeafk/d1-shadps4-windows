@@ -1414,3 +1414,27 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   Bladedancer's - left empty, so no sprint / grenade / correct super); the creator's own
   face / hair choices were not varied in the tests; the game goes creation -> orbit, not into
   the opening cinematic and first mission; the appearance preview in the creator is black.
+
+## 67. Abilities for every subclass, from the game files (2026-10-12 13:40, run TITAN1)
+- The grid table is tag 0x80A5E227 (rows 0x18, definition tag @+0x10): grids 130-135 =
+  0x80a6467c..81, 888-890 = 0x80a648fe..900. All nine extracted offline (130 identical to the
+  copy read from the running game on 2026-10-11). Only the equipped subclass's grid is in
+  memory at run time.
+- tools\talent_grid.py: default_active(grid) = the first node of each exclusive set (node
+  +0x38) + every set-less node; abilities(grid) = per ability slot the row named by the first
+  active node (later ones naming the same slot lose), the option hashes aimed at that row, and
+  the perk indices without 256. For grid 130 both reproduce section 43's served values exactly
+  (nodes 0,1,2,3,4,7,10,12,13,19,20,23,24,25; rows 26,12,8,3,13; perks 208 88 89 84 76 77 78 79).
+  Rows: Gunslinger 33,5,8,3,13; Striker 29,4,7,9,13; Defender 34,15,7,9,13; Sunsinger
+  18,11,16,6,13; Voidwalker 22,10,16,6,13; Nightstalker 31,2,8,3,13; Sunbreaker 27,14,7,9,13;
+  Stormcaller 23,0,16,6,13.
+- new_guardian.py now reads the grid index from the rebuilt subclass element (+0x58), passes
+  the node set to `inventory rebuild --subclass-nodes` (both rebuilds - the second one resets
+  them otherwise) and hands the abilities to finish_character.
+- TITAN1: created a TITAN at the creation screen (default look = Exo male), Moon map: Striker
+  HUD with grenade and fist-melee icons and a charged super bar ("Super Charged" tip), Titan
+  arm in first person; walk 4.1 u/s, sprint 6.6 u/s (L3 held), jump +1.49
+  (Desktop\CREATED-titan-abilities-on-moon.png). Not tested: throwing the grenade, the super,
+  the Warlock in a combat world, the three Taken King subclasses in game.
+- Seen again: the weapon HUD reads 3 / 35 for a hand cannon - magazine sizes are not served
+  (weapon stats), for every character.
