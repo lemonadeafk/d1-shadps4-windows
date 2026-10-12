@@ -1132,3 +1132,18 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   content: the Ghost there is the scripted squad Ghost (sq_nux_ghost) + ho_ghostlight, already
   "out" of the player's hand. Remaining Ghost work = that room's script (its performance is not
   accepted yet), not the player's hand.
+
+## 56. The Wall's scripted Ghost performs (2026-10-11 22:35, runs GH6 / WALL7)
+- Section 55's "performance not accepted" was MY byte order: the hash is 0x9B1D6A71 (bytes
+  71 6a 1d 9b); I had sent it swapped. Also actor+0xABC was the wrong place to look: FUN_0013B460
+  keeps the last started sequence in the OBJECT ([actor+0x40] handle -> object +0xABC), and the
+  actor's handle is at +0x38, object handle +0x40, definition +0x1C, sensor ref +0x60.
+- Served {A = 0x9B1D6A71, sequence 1} on nux_ghost (fc0e45a3 sub 125, capture\values\
+  ghost_perf.bin): the Ghost leaves the gate and flies 21 m into the room
+  ((390.5,-787.0,18.9) -> (392.8,-766.3,18.9)) and its TORCH lights a round patch of whatever
+  the player looks at (Desktop\GHOST-torch-in-the-Wall.png). No ho_ghostlight needed for that.
+- mission_director "wall": Ghost appears -> +3 s performance -> music, lines, power, gate,
+  Fallen. Run end to end from a fresh launch (WALL7): every step sent, no crash; a blue Ghost
+  marker shows at the screen edge and the GHOST speaker icon on its lines.
+- Still open: the Ghost stops there (no "fly to gun" - that is pm_nux_ghost_light_up_fly_to_gun,
+  kind 28, which the client does not take from the host); timings are timers, not triggers.

@@ -29,6 +29,7 @@ BREACH = "0xfc0e45a3"           # the Wall room's own group (bubble 3)
 #   ("seq", group, sub, name)                       play a kind-5 sequence
 #   ("state", group, subs, (ch0, ch1, ch2), name)   scripted-object state channels (0..1)
 #   ("gone", group, subs, name)                     remove scripted objects
+#   ("perf", group, sub, value file, name)          start an actor's performance (kind-40 sensor)
 #   ("spawn", group, name[, subs])                  squad members get their actors (all, or the listed subs)
 SCRIPTS = {
     # Inside the Wall: the Ghost's first lines over the music cue, then the power comes up
@@ -36,7 +37,8 @@ SCRIPTS = {
     # (o_breach_gating_back + o_breach_nut_back removed). NIGHT-NOTES section 54.
     "wall": [
         (0, "spawn", BREACH, "the Ghost appears", [95]),      # sq_nux_ghost__ghost, by the gate
-        (4, "seq", DIALOGUE, 0, "seq_m_cue1"),
+        (3, "perf", BREACH, 125, "ghost_perf.bin", "the Ghost flies into the room with its torch"),
+        (2, "seq", DIALOGUE, 0, "seq_m_cue1"),
         (1, "seq", DIALOGUE, 3, "seq_d_o1_10"),
         (8, "seq", DIALOGUE, 4, "seq_d_o1_15"),
         (6, "state", BREACH, "0", (0.0, 0.0, 0.25), "power 25%"),
@@ -115,6 +117,10 @@ def main():
         if kind == "seq":
             _, _, group, sub, name = step
             entries = ["%s:%d:%s" % (group, sub, sequence_value(a.counter))]
+        elif kind == "perf":
+            _, _, group, sub, image, name = step
+            img = open(os.path.join(os.path.dirname(HERE), "capture", "values", image), "rb").read().hex()
+            entries = ["%s:%d:%s" % (group, sub, img)]
         elif kind == "spawn":
             group, name = step[2], step[3]
             only = step[4] if len(step) > 4 else None
