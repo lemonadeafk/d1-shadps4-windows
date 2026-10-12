@@ -1549,3 +1549,9 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   character's quest state would carry are not served.
 - So today: a created Guardian can walk the Tower; the mission launchers need the default
   Hunter (or a --geared created one) until those flags are understood.
+- 15:40, run FLAGS1 (default Hunter + FLAG 435, 3826, 292): Earth entries 17 and 18 go to
+  status 4 and more nodes show. The padlocked node at the Gateway is "The Silent Fang" (House
+  of Wolves, "Requires: House of Wolves"), not the first mission. Entry 1 (0xf1f3951b) is
+  hidden by "VALUE(1272) > -1" and would be status 4 with FLAG(3914) and not FLAG(5746) - a
+  candidate for "A Guardian Rises", not checked. current.txt was cleared after the tests: the
+  launchers serve the default Hunter.
