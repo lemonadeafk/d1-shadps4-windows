@@ -1234,3 +1234,7 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   or without the Ghost actor. Desktop\GHOST-lines-recorded-from-game.wav = 20b, 20c, 20d as
   captured (normalised). Earlier "no voice" was most likely values overwritten by the host's
   repeat frames (the lines were sent 50 s after arrival, the default burst lasts 120 s).
+- 00:17 (run WALL8): the inside-the-Wall launcher's script ("wall") now carries the objectives
+  too (FIND A WEAPON at the start, GRAB THE RIFLE when the gate opens). Fresh launch, every
+  step sent, alive at the end: Nav Mode shows GRAB THE RIFLE, the GHOST speaker icon is up and
+  the Fallen are on the radar (Desktop\WALL-objective-ghost-fallen.png).

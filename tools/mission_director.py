@@ -74,11 +74,15 @@ SCRIPTS["mission"] = [(0, "objective", 3, ANNOUNCE, "NEW MISSION - Restoration")
                       (16, "objective", 3, HIDDEN, "ENTER THE WALL done"),
                       (1, "objective", 7, ACTIVE, "objective: FIND A WEAPON"),
                       (1, "seq", DIALOGUE, 34, "seq_fallen_scream_mid")]
+_wall = []
 for _step in SCRIPTS["wall"]:
-    SCRIPTS["mission"].append(_step)
+    _wall.append(_step)
     if _step[-1] == "gate opens":
-        SCRIPTS["mission"] += [(1, "objective", 7, HIDDEN, "FIND A WEAPON done"),
-                               (1, "objective", 11, ACTIVE, "objective: GRAB THE RIFLE")]
+        _wall += [(1, "objective", 7, HIDDEN, "FIND A WEAPON done"),
+                  (1, "objective", 11, ACTIVE, "objective: GRAB THE RIFLE")]
+SCRIPTS["mission"] += _wall
+# started inside the Wall: the same room with its objectives
+SCRIPTS["wall"] = [(0, "objective", 7, ACTIVE, "objective: FIND A WEAPON")] + _wall
 SETTLE = {"wall": 50, "mission": 50}     # seconds after in_world before the first step
 
 
