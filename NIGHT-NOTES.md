@@ -2134,3 +2134,27 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   s_investment_online_world_controller_activity_state, c_activity_reward_info,
   s_post_game_reward. Kills/deaths columns: scoreboard record 4786c0e0 kind 15, schema
   0x808008D0 (19792 B), never served.
+
+## 89. XP for a created Guardian; what locks the Earth nodes (2026-10-13 17:00-19:05, runs XP1, FLAG101, FLAGR2)
+- Kill incidents (udt 18, schema 0x8080097D, decoded with object_file): a type-id list at +0 (count)
+  / +4.. (u32 ids). Kills hold 0x2C2 and 0x8EF (RESPLAY: 11 thralls + the wizard, nothing else);
+  victim ids: thrall 0x94B 0x4A5 0xDDC 0xA69 0x782 0x7C4, wizard 0x28A 0xD7 0x1D4 0x625 0xB42 0xBA
+  0xC60; 0xAA9 maybe precision. Each kill is preceded by 0xC1A and followed by {0xE1B, 0x5C6};
+  0xC9E (41x) is probably damage. The incident does not carry the victim's record ref.
+- tools\xp_service.py: follows the run, decodes incidents, adds XP (PLACEHOLDER amounts: thrall 20,
+  wizard 150, other 30, mission 1500), writes progression 117 in the Guardian's profile (+0x3660)
+  and the card level (char +0x68, D1 curve), pushes FAMILIES=3,4 through D1_SWAP_TRIGGER.
+  Verified live: 5000 XP pushed, the in-orbit profile read back progress 0x1388 at ordinal 117.
+- Earth Director (dest 10, tools\director_rules.py): nodes are gated by kind-3 completion flags.
+  Experiments (D1_UNLOCK_FLAGS + flag, user named the nodes): FLAG 101 -> entry 29 "Patrol the
+  Cosmodrome"; FLAGs 292/298/249 -> entries 18/31/34 = "The Silent Fang", "The Ruling House",
+  "Fist of Crota" (expansions). The original story chain: entries 36-40 need FLAG 132, 134, 136,
+  140, 237 (status 4); entries 41/42 need 257/186; 17/27/45 need 3826/3849/3860 with 435.
+  Status 3 alternatives: FLAG 2548 (the shared gate) or 35xx flags.
+- Next round (not run - stopped, the user needed the PC): FLAG 132 alone, expect Restoration.
+- Flag table = investment 0x80A5FFCD (6944 x {u32 hash, u16 kind, u16 sub}); activity table =
+  0x80A5FFB0 (class 0x80801915, 546 index entries {hash, self-relative offset} at +0xA0;
+  A Guardian Rises 0x6e0dae89 -> record at 0x100A8, which lists flags 1626/1618/1609/1623/3627 = 2).
+- Unlock flags are served account-wide (503/205); per-character completion storage is still open.
+- Created Guardian: the Director opens on Earth (no solar system view), so autopilot's Tower route
+  fails; use --stop-at orbit. The autopilot pressed Launch once after reaching orbit - stop it.
