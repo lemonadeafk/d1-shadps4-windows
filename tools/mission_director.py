@@ -214,7 +214,7 @@ _ROOM = [
         _line(0.5, 16, "o2_60"),
     ]),
     ((ACTIVITY, 29, 35), [                                                # obj_get_weapon trigger: AT the rifle
-        (1.5, "gone", ACTIVITY, "6", "the rifle is taken"),
+        (0, "gone", ACTIVITY, "6", "the rifle is taken"),
         (0, "loadout", "khvostov", "the Khvostov is handed over"),
         (0.5, "objective", 11, HIDDEN, "GRAB THE RIFLE done"),
         _line(0, 19, "o2_90"),                                            # "I hope you know how to use that thing"
@@ -407,11 +407,15 @@ def trigger_logger(run, bubble):
             if p.wait() == 0 and os.path.exists(tmp):
                 os.replace(tmp, out_path)
 
-    t0 = time.time()
-    prepare(triggers)
-    note("prepared %d answers in %.1f s" % (len(os.listdir(ready)), time.time() - t0))
-    arm(triggers)
-    note("armed %d triggers" % len(triggers))
+    log_only = os.environ.get("MISSION_LOG_ONLY") == "1"
+    if log_only:        # the activity host's mission engine arms and answers (mission_compile.py)
+        note("logging only - the host's mission engine runs the mission")
+    else:
+        t0 = time.time()
+        prepare(triggers)
+        note("prepared %d answers in %.1f s" % (len(os.listdir(ready)), time.time() - t0))
+        arm(triggers)
+        note("armed %d triggers" % len(triggers))
     fired, rearm_at, in_wall = set(), None, False
     # the walked path, a point for every metre moved: <run>\path-log.txt (time x y z). A real
     # playthrough's path is what the test walker follows - straight lines between trigger
@@ -435,7 +439,7 @@ def trigger_logger(run, bubble):
             elif kind == 28 and body[:4] == "1111":
                 pos = player_position()
                 note("REGION  %s %s at %s" % (key, names.get(key, "?"), "(%.1f, %.1f, %.1f)" % pos if pos else "?"))
-        if rearm_at and time.time() > rearm_at:
+        if rearm_at and time.time() > rearm_at and not log_only:
             rearm_at = None
             arm([t for t in triggers if t not in fired])
             note("re-armed after the area switch")
@@ -450,6 +454,8 @@ def main():
     ap.add_argument("--counter", type=int, default=1)
     ap.add_argument("--no-wait", action="store_true")
     ap.add_argument("--linear", action="store_true", help="the old timed script instead of the event script")
+    ap.add_argument("--log-only", action="store_true",
+                    help="only write trigger-log.txt / path-log.txt; the host's mission engine plays the mission")
     ap.add_argument("--no-trigger-log", action="store_true", help="do not arm and log the game's player triggers")
     a = ap.parse_args()
     run = newest_run()
@@ -460,7 +466,8 @@ def main():
         print("in world:", os.path.basename(run))
         # let the host's arrival frames and their repeats finish first (they would overwrite
         # the script's values); MISSION_SETTLE overrides for a host with fewer repeats
-        time.sleep(float(os.environ.get("MISSION_SETTLE", SETTLE[a.script])))
+        if not a.log_only:
+            time.sleep(float(os.environ.get("MISSION_SETTLE", SETTLE[a.script])))
     import object_state
     import sense_reports
     watcher = sense_reports.Watcher(run, a.bubble, WORLD[2:], history=True)
@@ -469,6 +476,13 @@ def main():
     seq = 100                       # scripted-object sequence numbers only ever rise
     import threading
     run_dir = run
+    if a.log_only:
+        os.environ["MISSION_LOG_ONLY"] = "1"
+        print("logging only (the activity host plays the mission)", flush=True)
+        threading.Thread(target=trigger_logger, args=(run, a.bubble), daemon=True).start()
+        while newest_run() == run and os.path.isdir(run):
+            time.sleep(5)
+        return
     if not a.no_trigger_log:
         threading.Thread(target=trigger_logger, args=(run, a.bubble), daemon=True).start()
     lock = threading.Lock()

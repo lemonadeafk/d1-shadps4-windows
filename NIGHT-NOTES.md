@@ -1968,3 +1968,29 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
 - Side effect to remember: a creation run writes capture-rig\guardians\current.txt and every
   launcher then serves that level-1 Guardian (Director map differs, autopilot cannot launch);
   deleted again afterwards.
+
+## 84. The mission engine: the activity host plays the mission (2026-10-13 11:30-12:20, runs ENG1-3)
+- WHY: the original mission scripts never shipped. Every record definition of the Wall area was
+  scanned for references to other records: only structure (member -> squad, trigger -> volume
+  kind 58/55), never "trigger -> spawn / sequence". So the logic is authored; what this changes
+  is WHO runs it: before, a Python script polled the log and built each frame when needed
+  (0.2 s poll + about 0.5-1 s per frame + the host's pick-up); now everything is prepared.
+- tools\mission_compile.py [--script mission|wall] [--out inject\mission]: the event script
+  (mission_director.EVENT_SCRIPTS) -> inject\mission\mission.txt + one finished udt-5 frame per
+  step (56 frames, ~17 s) + inject\trigger-ready (the "switch off" answer per trigger).
+- d1-activity-host src\mission.rs, D1_AH_MISSION=<dir>\mission.txt: cue lines (start, a record
+  name ref, or a record ":changed"), steps {delay, frame | fire <cue> | file <src> <dst>}. The
+  client's udt 6 / 18 payloads are searched for each pending cue's 55-bit name reference; a cue's
+  steps are scheduled at once, zero-delay ones leave with the frame that carried the report
+  (measured: same millisecond), the rest from the tick (100 ms while a mission is loaded).
+  "start" = the client's first sense update; the player triggers are armed 18 s later (the
+  host's arrival frames reset them - armed at 0 s the highway triggers never fired, ENG1) and
+  again 17 s after the Wall's area appears. A trigger's prepared answer is no longer used up:
+  sent again at most every 2 s.
+- mission_director.py --log-only: only trigger-log.txt / path-log.txt. The three mission
+  launchers compile, set D1_AH_MISSION and run the recorder.
+- ENG3 (test walker on the user's recorded route): every cue from the highway to pt_fallen_b
+  fired in order; room -> Ghost line 0 s, power-up 2 s, gate partway 8 s (crouch under it works
+  at 0.5), rifle taken + Khvostov the instant the player is at it. No crash across the switch.
+- Not yet in the engine: the chest's "changed" cue is compiled but untested; Fallen squads
+  without member records (section 76) still cannot be named.

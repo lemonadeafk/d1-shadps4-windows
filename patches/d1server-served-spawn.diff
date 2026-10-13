@@ -78,8 +78,20 @@ index ba405fc..08c627d 100644
  }
  
  /// ⭐ Inbound ids this Activity Host **deliberately does not decode**, with the reason - so the run
+diff --git a/d1-server/crates/d1-activity-host/src/lib.rs b/d1-server/crates/d1-activity-host/src/lib.rs
+index b641c0d..95c99e0 100644
+--- a/d1-server/crates/d1-activity-host/src/lib.rs
++++ b/d1-server/crates/d1-activity-host/src/lib.rs
+@@ -81,6 +81,7 @@ pub mod entity;
+ pub mod fireteam;
+ pub mod listener;
+ pub mod messages;
++pub mod mission;
+ pub mod protocol;
+ pub mod push;
+ pub mod registry;
 diff --git a/d1-server/crates/d1-activity-host/src/listener.rs b/d1-server/crates/d1-activity-host/src/listener.rs
-index c535359..b7876d0 100644
+index c535359..e0956c9 100644
 --- a/d1-server/crates/d1-activity-host/src/listener.rs
 +++ b/d1-server/crates/d1-activity-host/src/listener.rs
 @@ -151,6 +151,9 @@ pub struct AhConnection {
@@ -100,7 +112,7 @@ index c535359..b7876d0 100644
          }
      }
  
-@@ -372,6 +376,13 @@ impl AhConnection {
+@@ -372,6 +376,20 @@ impl AhConnection {
          let mut events = Vec::new();
          // ⭐ Deliberate non-decode, stated as such. See `AhEvent::NotDecoded`.
          events.extend(self.capture_once(udt, payload));
@@ -111,10 +123,17 @@ index c535359..b7876d0 100644
 +                events.extend(self.try_push(push));
 +            }
 +        }
++        if udt == 6 || udt == 18 {
++            // the mission engine: a reaction with no delay leaves with this very frame
++            for push in self.instance.mission_report(payload, now) {
++                events.push(AhEvent::WantsToPush { user_defined_type: push.message.user_defined_type() });
++                events.extend(self.try_push(push));
++            }
++        }
          if let Some(why) = crate::codec::undecodable_reason(udt) {
              events.push(AhEvent::NotDecoded {
                  user_defined_type: udt,
-@@ -381,7 +392,18 @@ impl AhConnection {
+@@ -381,7 +399,18 @@ impl AhConnection {
              });
              return events;
          }
@@ -134,10 +153,17 @@ index c535359..b7876d0 100644
              Ok(i) => i,
              Err(e) => {
                  events.push(AhEvent::NamedGate { what: "AH wire codec", detail: e.to_string() });
-@@ -496,6 +518,13 @@ impl AhConnection {
+@@ -496,6 +525,20 @@ impl AhConnection {
              });
              events.extend(self.try_push(push));
          }
++        // ⭐ The mission engine's delayed steps.
++        for push in self.instance.mission_due(now) {
++            events.push(AhEvent::WantsToPush {
++                user_defined_type: push.message.user_defined_type(),
++            });
++            events.extend(self.try_push(push));
++        }
 +        // ⭐ Injected udt-5 frames (`D1_AH_SENSOR_INJECT_DIR`): the experiment channel.
 +        for push in self.instance.injected_due() {
 +            events.push(AhEvent::WantsToPush {
@@ -148,7 +174,7 @@ index c535359..b7876d0 100644
          let mut out = self.conv.drain(now);
          out.extend(self.pending_pushes.drain(..));
          let sealed = self.seal_all(out, &mut events);
-@@ -508,7 +537,11 @@ impl AhConnection {
+@@ -508,7 +551,11 @@ impl AhConnection {
      /// motivated this, and ten copies of one byte is not ten vectors. The first is the one worth
      /// keeping - it is the one sent from a known state.
      fn capture_once(&mut self, udt: u32, payload: &[u8]) -> Vec<AhEvent> {
@@ -161,7 +187,18 @@ index c535359..b7876d0 100644
              vec![payload_event(udt, payload)]
          } else {
              Vec::new()
-@@ -609,12 +642,20 @@ async fn drive(
+@@ -552,6 +599,10 @@ impl AhConnection {
+ /// heartbeat period, so three consecutive missed polls still leave the client's host-crash timeout
+ /// un-tripped. Never zero.
+ fn conn_heartbeat_poll(instance: &ActivityInstance) -> std::time::Duration {
++    if instance.has_mission() {
++        // delayed mission steps are sent from the tick: keep it short
++        return std::time::Duration::from_millis(100);
++    }
+     (instance.host_heartbeat() / 4).max(std::time::Duration::from_millis(100))
+ }
+ 
+@@ -609,12 +660,20 @@ async fn drive(
      let mut buf: Vec<u8> = Vec::new();
      let mut chunk = [0u8; 8192];
      tracing::info!("AH connection from {peer}");
@@ -711,8 +748,220 @@ index 4e17610..27f1d72 100644
      /// The region id currently in slot 0 of the tabulated array, for the run log and the controls.
      pub fn pah_region_id(&self) -> u32 {
          let o = Self::PAH_REGIONS + Self::PAH_REGION_ID;
+diff --git a/d1-server/crates/d1-activity-host/src/mission.rs b/d1-server/crates/d1-activity-host/src/mission.rs
+new file mode 100644
+index 0000000..d5c7f1d
+--- /dev/null
++++ b/d1-server/crates/d1-activity-host/src/mission.rs
+@@ -0,0 +1,206 @@
++// SPDX-FileCopyrightText: Copyright 2026 Destiny 1 Preservation Project
++// SPDX-License-Identifier: GPL-2.0-or-later
++
++//! ⭐ The mission engine: a mission's script played by the host itself, reacting to what the
++//! client reports.
++//!
++//! The mission scripts of the original service never shipped with the client: the content holds
++//! only the records (squads, triggers, objectives, sequences ...), not what makes one follow
++//! another. So the script is authored (`tools/mission_compile.py` in the Windows glue turns an
++//! event script into this form) and this module plays it.
++//!
++//! `D1_AH_MISSION=<dir>/mission.txt`, tab-separated, one item per line:
++//!
++//! ```text
++//! cue   start                       runs when the client sends its first sense update
++//! cue   <group hex>:<kind>:<sub>     runs the first time the client reports that record
++//! cue   <group hex>:<kind>:<sub>:changed   ... reported with a value different from the one it
++//!                                    had once its arrival frames were over (30 s after first seen)
++//! <seconds>  frame  <file>  <label>  a finished udt-5 frame in <dir>, sent that long after the cue
++//! <seconds>  fire   <cue>   <label>  start another cue (if it has not run)
++//! <seconds>  file   <file>  <dst>  <label>   copy <dir>/<file> to <dst> (e.g. a loadout swap)
++//! ```
++//!
++//! A step with delay 0 goes out with the very frame whose report started the cue - the client
++//! sees the reaction one round trip after it acted. Frames are encoded before the run starts, so
++//! nothing is built while the player waits.
++
++use std::collections::{HashMap, HashSet};
++use std::path::{Path, PathBuf};
++use std::time::{Duration, Instant};
++
++#[derive(Debug, Clone, PartialEq, Eq, Hash)]
++pub enum Cue {
++    Start,
++    Report { group: u32, kind: u8, sub: u16, changed: bool },
++}
++
++#[derive(Debug, Clone)]
++enum Action {
++    Frame(Vec<u8>),
++    Fire(Cue),
++    File { src: PathBuf, dst: PathBuf },
++}
++
++#[derive(Debug, Clone)]
++struct Step {
++    delay: Duration,
++    action: Action,
++    label: String,
++}
++
++/// What the engine wants sent or done now.
++#[derive(Debug)]
++pub enum Output {
++    Frame { payload: Vec<u8>, label: String },
++}
++
++#[derive(Debug)]
++pub struct Mission {
++    cues: Vec<(Cue, Vec<Step>)>,
++    fired: HashSet<Cue>,
++    pending: Vec<(Instant, Step)>,
++    /// For "changed" cues: when the record was first reported, and its settled value bits.
++    first_seen: HashMap<(u32, u8, u16), Instant>,
++    settled: HashMap<(u32, u8, u16), Vec<u8>>,
++    started: bool,
++}
++
++fn parse_cue(s: &str) -> Option<Cue> {
++    if s == "start" {
++        return Some(Cue::Start);
++    }
++    let p: Vec<&str> = s.split(':').collect();
++    if p.len() < 3 {
++        return None;
++    }
++    Some(Cue::Report {
++        group: u32::from_str_radix(p[0].trim_start_matches("0x"), 16).ok()?,
++        kind: p[1].parse().ok()?,
++        sub: p[2].parse().ok()?,
++        changed: p.get(3) == Some(&"changed"),
++    })
++}
++
++impl Mission {
++    pub fn load(path: &Path) -> anyhow::Result<Self> {
++        let dir = path.parent().unwrap_or(Path::new("."));
++        let text = std::fs::read_to_string(path)?;
++        let mut cues: Vec<(Cue, Vec<Step>)> = Vec::new();
++        for (n, line) in text.lines().enumerate() {
++            let f: Vec<&str> = line.split('\t').collect();
++            if f.is_empty() || f[0].trim().is_empty() || f[0].starts_with('#') {
++                continue;
++            }
++            if f[0] == "cue" {
++                let cue = f.get(1).and_then(|c| parse_cue(c))
++                    .ok_or_else(|| anyhow::anyhow!("mission line {}: bad cue", n + 1))?;
++                cues.push((cue, Vec::new()));
++                continue;
++            }
++            let delay: f64 = f[0].parse().map_err(|_| anyhow::anyhow!("mission line {}: bad delay", n + 1))?;
++            let action = match (f.get(1).copied(), f.get(2).copied()) {
++                (Some("frame"), Some(file)) => Action::Frame(std::fs::read(dir.join(file))?),
++                (Some("fire"), Some(c)) => Action::Fire(
++                    parse_cue(c).ok_or_else(|| anyhow::anyhow!("mission line {}: bad cue", n + 1))?,
++                ),
++                (Some("file"), Some(src)) => Action::File {
++                    src: dir.join(src),
++                    dst: PathBuf::from(f.get(3).copied().unwrap_or_default()),
++                },
++                _ => anyhow::bail!("mission line {}: unknown step", n + 1),
++            };
++            let label = f.last().copied().unwrap_or_default().to_string();
++            let Some(last) = cues.last_mut() else { anyhow::bail!("mission line {}: step before any cue", n + 1) };
++            last.1.push(Step { delay: Duration::from_secs_f64(delay.max(0.0)), action, label });
++        }
++        Ok(Self {
++            cues,
++            fired: HashSet::new(),
++            pending: Vec::new(),
++            first_seen: HashMap::new(),
++            settled: HashMap::new(),
++            started: false,
++        })
++    }
++
++    pub fn cue_count(&self) -> usize {
++        self.cues.len()
++    }
++
++    fn fire(&mut self, cue: &Cue, now: Instant) {
++        if self.fired.contains(cue) {
++            return;
++        }
++        // every block written for this cue (a compiled script may have several)
++        let steps: Vec<Step> = self.cues.iter().filter(|(c, _)| c == cue).flat_map(|(_, s)| s.clone()).collect();
++        if steps.is_empty() {
++            return;
++        }
++        self.fired.insert(cue.clone());
++        tracing::info!("⭐ mission: cue {cue:?} ({} steps)", steps.len());
++        for s in steps {
++            self.pending.push((now + s.delay, s));
++        }
++    }
++
++    /// A udt-6 sense update or udt-18 incident from the client.
++    pub fn on_report(&mut self, payload: &[u8], now: Instant) {
++        if !self.started {
++            self.started = true;
++            self.fire(&Cue::Start, now);
++        }
++        let bits: Vec<u8> = payload.iter().flat_map(|b| (0..8).rev().map(move |i| (b >> i) & 1)).collect();
++        let watched: Vec<Cue> = self.cues.iter().map(|(c, _)| c.clone()).filter(|c| !self.fired.contains(c)).collect();
++        for cue in watched {
++            let Cue::Report { group, kind, sub, changed } = cue else { continue };
++            // name reference, 55 bits MSB first: u32 group, 7 bits kind + 1, 16 bits sub + 0x8000
++            let want = ((group as u64) << 23) | ((kind as u64 + 1) << 16) | (sub as u64 + 0x8000);
++            let at = (bits.len() >= 55)
++                .then(|| (0..=bits.len() - 55).find(|&a| bits[a..a + 55].iter().fold(0u64, |v, b| (v << 1) | *b as u64) == want))
++                .flatten();
++            let Some(at) = at else { continue };
++            if !changed {
++                self.fire(&cue, now);
++                continue;
++            }
++            // the value that follows the reference (up to 48 bits) stands in for the value
++            let value: Vec<u8> = bits[at + 55..(at + 55 + 48).min(bits.len())].to_vec();
++            let key = (group, kind, sub);
++            let first = *self.first_seen.entry(key).or_insert(now);
++            if now.duration_since(first) < Duration::from_secs(30) {
++                self.settled.insert(key, value);
++            } else if self.settled.get(&key).is_some_and(|v| *v != value) {
++                self.fire(&cue, now);
++            } else {
++                self.settled.entry(key).or_insert(value);
++            }
++        }
++    }
++
++    /// Everything due now, in order.
++    pub fn due(&mut self, now: Instant) -> Vec<Output> {
++        let mut out = Vec::new();
++        loop {
++            self.pending.sort_by_key(|(t, _)| *t);
++            let Some(pos) = self.pending.iter().position(|(t, _)| *t <= now) else { break };
++            let (_, step) = self.pending.remove(pos);
++            match step.action {
++                Action::Frame(payload) => {
++                    tracing::info!("⭐ mission: {}", step.label);
++                    out.push(Output::Frame { payload, label: step.label });
++                }
++                Action::Fire(cue) => {
++                    tracing::info!("⭐ mission: {} (fires {cue:?})", step.label);
++                    self.fire(&cue, now);
++                }
++                Action::File { src, dst } => {
++                    let tmp = dst.with_extension("tmp");
++                    let ok = std::fs::copy(&src, &tmp).and_then(|_| std::fs::rename(&tmp, &dst)).is_ok();
++                    tracing::info!("⭐ mission: {} ({} -> {}: {})", step.label, src.display(), dst.display(), if ok { "ok" } else { "FAILED" });
++                }
++            }
++        }
++        out
++    }
++}
 diff --git a/d1-server/crates/d1-activity-host/src/state.rs b/d1-server/crates/d1-activity-host/src/state.rs
-index 891ceb8..691bd31 100644
+index 891ceb8..89c2df2 100644
 --- a/d1-server/crates/d1-activity-host/src/state.rs
 +++ b/d1-server/crates/d1-activity-host/src/state.rs
 @@ -171,6 +171,8 @@ pub struct ActivityInstance {
@@ -724,7 +973,7 @@ index 891ceb8..691bd31 100644
      /// ⭐⭐ The bubble count published at `global_activity_state+0x10` (and the `0xFF` unchosen
      /// bytes at `+0x14`). `FUN_002A0320` runs right after the checksum passes and requires this to
      /// equal the world's scenario bubble count (`orbit` = 16). `0` = every run to date =
-@@ -222,8 +224,34 @@ pub struct ActivityInstance {
+@@ -222,8 +224,38 @@ pub struct ActivityInstance {
      /// content record exists**, and the applier drops it silently (task #4) - so a repeating send
      /// is how at least one copy arrives after the world is resident.
      sensor_repeat: Option<Duration>,
@@ -743,6 +992,10 @@ index 891ceb8..691bd31 100644
 +    /// `d1-oracle` example `sensor_frame`. A live experiment channel - off unless set.
 +    /// The client has sent `free_entity_indices` at least once. See `RequestStateRefresh`.
 +    client_pool_settled: bool,
++    /// When each trigger's prepared answer was last sent. See [`Self::incident_answers`].
++    incident_answered: std::collections::HashMap<(u32, u32), Instant>,
++    /// ⭐ `D1_AH_MISSION`: the mission engine, see [`crate::mission`].
++    mission: Option<crate::mission::Mission>,
 +    inject_dir: Option<std::path::PathBuf>,
 +    /// ⭐ `D1_AH_INCIDENT_READY_DIR`: answers to player-trigger incidents, prepared ahead of
 +    /// time. See [`Self::incident_answers`].
@@ -759,7 +1012,7 @@ index 891ceb8..691bd31 100644
  }
  
  impl ActivityInstance {
-@@ -306,6 +334,7 @@ impl ActivityInstance {
+@@ -306,6 +338,7 @@ impl ActivityInstance {
              // 0 is what every run so far sent, and naming what 0 means is the point.
              activity_index: 0,
              activity_checksum: 0,
@@ -767,7 +1020,7 @@ index 891ceb8..691bd31 100644
              bubble_count: 0,
              bubble_chosen: Vec::new(),
              pah_region: None,
-@@ -320,6 +349,16 @@ impl ActivityInstance {
+@@ -320,6 +353,29 @@ impl ActivityInstance {
              sensor_sent: false,
              sensors_sent: 0,
              sensor_repeat: None,
@@ -776,6 +1029,19 @@ index 891ceb8..691bd31 100644
 +            sensor_follow_max: None,
 +            current_region: 0,
 +            client_pool_settled: false,
++            incident_answered: std::collections::HashMap::new(),
++            mission: std::env::var_os("D1_AH_MISSION").and_then(|p| {
++                match crate::mission::Mission::load(std::path::Path::new(&p)) {
++                    Ok(m) => {
++                        tracing::info!("⭐ mission engine: {} cues from {}", m.cue_count(), std::path::Path::new(&p).display());
++                        Some(m)
++                    }
++                    Err(e) => {
++                        tracing::error!("⛔ D1_AH_MISSION {}: {e}", std::path::Path::new(&p).display());
++                        None
++                    }
++                }
++            }),
 +            inject_dir: std::env::var_os("D1_AH_SENSOR_INJECT_DIR").map(std::path::PathBuf::from),
 +            incident_ready_dir: std::env::var_os("D1_AH_INCIDENT_READY_DIR").map(std::path::PathBuf::from),
 +            bubble_sensor_payloads: std::collections::BTreeMap::new(),
@@ -784,7 +1050,7 @@ index 891ceb8..691bd31 100644
              sensor_last_sent: None,
          }
      }
-@@ -435,6 +474,137 @@ impl ActivityInstance {
+@@ -435,6 +491,175 @@ impl ActivityInstance {
          self.sensor_repeat = Some(every);
      }
  
@@ -828,14 +1094,52 @@ index 891ceb8..691bd31 100644
 +                if frame.is_empty() {
 +                    continue;
 +                }
++                // kept for the next time (a trigger armed again fires again); at most every 2 s
++                let key = (group, sub);
++                if self.incident_answered.get(&key).is_some_and(|t| t.elapsed() < Duration::from_secs(2)) {
++                    continue;
++                }
++                self.incident_answered.insert(key, Instant::now());
 +                tracing::info!("⭐ incident names {group:08x}:{sub}: sending its prepared answer ({} bytes)", frame.len());
-+                let _ = std::fs::rename(&path, path.with_extension("sent"));
 +                self.sensors_sent += 1;
 +                self.sensor_burst_base += 1;
 +                out.push(AhPush::new(self.ah_id, AhMessage::SensorAuthUpdate { payload: frame }));
 +            }
 +        }
 +        out
++    }
++
++    pub fn has_mission(&self) -> bool {
++        self.mission.is_some()
++    }
++
++    /// A client report (udt 6 / 18) for the mission engine; returns what is due at once, so a
++    /// zero-delay reaction leaves with the frame that carried the report.
++    pub fn mission_report(&mut self, payload: &[u8], now: Instant) -> Vec<AhPush> {
++        if !matches!(self.state, InstanceState::Live) {
++            return Vec::new();
++        }
++        if let Some(m) = self.mission.as_mut() {
++            m.on_report(payload, now);
++        }
++        self.mission_due(now)
++    }
++
++    /// The mission engine's steps that are due.
++    pub fn mission_due(&mut self, now: Instant) -> Vec<AhPush> {
++        if !matches!(self.state, InstanceState::Live) {
++            return Vec::new();
++        }
++        let Some(m) = self.mission.as_mut() else { return Vec::new() };
++        let outs = m.due(now);
++        let mut pushes = Vec::new();
++        for crate::mission::Output::Frame { payload, .. } in outs {
++            // counted like an injected frame: not part of the current burst
++            self.sensors_sent += 1;
++            self.sensor_burst_base += 1;
++            pushes.push(AhPush::new(self.ah_id, AhMessage::SensorAuthUpdate { payload }));
++        }
++        pushes
 +    }
 +
 +    /// Frames dropped into [`Self::inject_dir`] since the last tick, oldest name first.
@@ -922,7 +1226,7 @@ index 891ceb8..691bd31 100644
      /// ⭐⭐ The udt-5 `sensor_auth_update`, sent **once** after the instance reaches [`Live`]
      /// (or on an interval, in [`Self::set_sensor_repeat`] mode).
      ///
-@@ -462,6 +632,11 @@ impl ActivityInstance {
+@@ -462,6 +687,11 @@ impl ActivityInstance {
              }
              // Repeat mode: pace on the interval since the last send.
              Some(every) => {
@@ -934,7 +1238,7 @@ index 891ceb8..691bd31 100644
                  if let Some(last) = self.sensor_last_sent {
                      if now.saturating_duration_since(last) < every {
                          return None;
-@@ -469,7 +644,13 @@ impl ActivityInstance {
+@@ -469,7 +699,13 @@ impl ActivityInstance {
                  }
              }
          }
@@ -949,7 +1253,7 @@ index 891ceb8..691bd31 100644
          self.sensor_sent = true;
          self.sensor_last_sent = Some(now);
          self.sensors_sent += 1;
-@@ -510,6 +691,7 @@ impl ActivityInstance {
+@@ -510,6 +746,7 @@ impl ActivityInstance {
          s.set_activity_index(self.activity_index);
          // ⭐⭐ The field that aborts rung 33's world transition when it disagrees with content.
          s.set_activity_checksum(self.activity_checksum);
@@ -957,7 +1261,7 @@ index 891ceb8..691bd31 100644
          // ⭐⭐ The bubble count + unchosen bytes that FUN_002A0320 validates right after. Bounded
          // to the 64-byte field; a too-large count is a config error, so publish what we can and let
          // the loud "bubble count mismatch" name a wrong number rather than silently truncating.
-@@ -518,6 +700,20 @@ impl ActivityInstance {
+@@ -518,6 +755,20 @@ impl ActivityInstance {
          // field, so order is load-bearing. An all-`0xFF` blob passes rung 33 and then UNREGISTERS
          // every slice-set region, which is rung 34's `error.sstm_slice_not_found`.
          let _ = s.set_bubble_chosen(&self.bubble_chosen);
@@ -978,7 +1282,7 @@ index 891ceb8..691bd31 100644
          AhPush::new(self.ah_id, AhMessage::GlobalActivityState(s))
      }
  
-@@ -586,6 +782,23 @@ impl ActivityInstance {
+@@ -586,6 +837,23 @@ impl ActivityInstance {
          // the operator reads it; every re-publish after it logs at DEBUG, because a refresh every
          // few seconds repeating the same receipt turns the run log into noise and hides the
          // warnings. The condition is the join/refresh discriminator we already track.
@@ -1002,7 +1306,7 @@ index 891ceb8..691bd31 100644
          match self.pah_region {
              Some((region, peer, token)) => match m.set_pah_region(region, peer, token) {
                  Ok(()) if first => tracing::info!(
-@@ -723,6 +936,7 @@ impl ActivityInstance {
+@@ -723,6 +991,7 @@ impl ActivityInstance {
              }
              ClientMessage::FreeEntityIndices(mask) => {
                  self.entities.free(mask);
@@ -1010,7 +1314,7 @@ index 891ceb8..691bd31 100644
                  Vec::new()
              }
  
-@@ -752,13 +966,28 @@ impl ActivityInstance {
+@@ -752,13 +1021,28 @@ impl ActivityInstance {
              // guard that stops the *join* from repeating them.
              ClientMessage::RequestStateRefresh { .. } => {
                  self.state_refreshes += 1;
@@ -1044,7 +1348,7 @@ index 891ceb8..691bd31 100644
                  // The membership stays an ECHO. With no stored request there is nothing to echo
                  // and the push is lost rather than fabricated - the same rule as the join.
                  //
-@@ -817,13 +1046,71 @@ impl ActivityInstance {
+@@ -817,13 +1101,71 @@ impl ActivityInstance {
              //
              // Accepted and recorded, not acted on. A stub with one peer has nothing to reserve
              // against, and `43 reservations_failed` is for failures we cannot have.
@@ -1118,7 +1422,7 @@ index 891ceb8..691bd31 100644
      /// Advance the replication epoch. `[C]` a `u8`; the wire payload is `{u8 epoch, u8 suppress}`.
      ///
      /// Nothing in a stub needs to call this - it exists because the epoch is authoritative state
-@@ -894,6 +1181,13 @@ impl ActivityInstance {
+@@ -894,6 +1236,13 @@ impl ActivityInstance {
          self.activity_checksum = checksum;
      }
  
