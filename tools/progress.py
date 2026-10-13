@@ -10,9 +10,8 @@ in the world unlocks the next Director node when the player is back in orbit.
 
 On the original service the server decided which flag a completed activity sets (the manifest's
 completionFlagHash); the client's files do not hold that link. COMPLETION below is read off the
-Director's own rules (tools\director_rules.py: the Earth story nodes, entries 36-40, need FLAG
-132, 134, 136, 140, 237 in turn) - NIGHT-NOTES sections 89-90. Entries marked "to verify" are a
-reading of the chain, not yet confirmed by unlocking the node they should open.
+Director's own data (the story nodes and the activity each launches, below) - NIGHT-NOTES
+sections 89-92.
 """
 import argparse
 import os
@@ -26,10 +25,16 @@ import new_guardian as ng  # noqa: E402
 BASE = [98, 131, 419, 440, 834, 2479, 2496, 2497, 2500, 2501, 2502, 2503, 2667, 4917, 4992, 5015, 5987, 6018]
 PROLOGUE_GO = 2837          # the prologue table: activity 163 if FLAG 2837 AND NOT FLAG 836 (section 72)
 PROLOGUE_DONE = 836         # presumably "prologue done" - set with A Guardian Rises' completion
-# activity index -> the completion flag it sets
+# activity index -> the completion flag it sets. The Earth Director book (content 0x80A5FFFF) lists
+# each entry's activity {hash, u32 index}: entry 36 launches 165 (Restoration) and needs FLAG 132,
+# 37 -> 167 needs 134, 38 -> 169 needs 136, 39 -> 171 needs 140, 40 -> 208 needs 237. Each story
+# node opening on the previous mission's completion gives the table below (section 92).
 COMPLETION = {
-    163: 132,               # A Guardian Rises -> Earth story entry 36 (to verify: should open Restoration)
-    165: 134,               # Restoration -> entry 37 (to verify)
+    163: 132,               # A Guardian Rises -> opens Restoration (entry 36)
+    165: 134,               # Restoration -> opens activity 167 (entry 37)
+    167: 136,               # -> 169 (entry 38)
+    169: 140,               # -> 171 (entry 39)
+    171: 237,               # -> 208 (entry 40)
 }
 # 101 opens "Patrol the Cosmodrome" (user-verified, round 1); that A Guardian Rises is what grants
 # it is a GUESS - the Director rules do not say which mission does

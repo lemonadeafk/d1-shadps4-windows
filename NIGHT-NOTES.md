@@ -2198,3 +2198,24 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
 - tools\encounter.py sets task states through the injection folder; frames encode for 41d61614:1
   and 062dd95d:4. NEXT (needs a live session): states 0/2/3/4 on the Hive dome (do the frozen
   acolytes move?) and on obj_m0_hangar_fallen (do the hangar Fallen appear?).
+
+## 92. Director -> activity; encounter and squad state tests (2026-10-13 19:35-19:55, run ENC1)
+- The Director book (Earth = content 0x80A5FFFF, layout as tools\director_rules.py) lists each
+  entry's activities as {u32 hash, u32 activity index} at entry+8 (count) / +0x10 (offset):
+  entry 29 Patrol -> 92 (FLAG 101); 36 -> 165 RESTORATION (FLAG 132); 37 -> 167 (134); 38 -> 169
+  (136); 39 -> 171 (140); 40 -> 208 (237); 41 -> 302 (257); 42 -> 301 (186); DLC 18 -> 215 (292),
+  31 -> 219 (298), 34 -> 206 (249). So FLAG 132 opens Restoration = the gate A Guardian Rises sets;
+  tools\progress.py COMPLETION now 163:132, 165:134, 167:136, 169:140, 171:237.
+- ENC1 (default Hunter, Restoration bubble 8, basement troopers + thralls spawned, 13 new
+  entities, nothing moved without input): obj_hive_dome_a01 task bytes set to 2,3,0,4,5,6,7 -> the
+  live record took them (rec+0x1E0 + i*0x1A = 7 x 24, +0x450 0) but NO entity moved and the
+  client's own report stayed all-1. The objective byte is not a behaviour switch (it looks like
+  a per-task revision: compare, store, reset the task's scratch data).
+- Squad value +0x41/+0x42/+0x43 (record +0x405..+0x407, 0 on every squad) are pushed to each actor
+  (FUN_00104D30 -> FUN_00BDA0E0, an interface call into the actor's AI). +0x41 = 1..4 and +0x42 =
+  1..2 on squads 41d61614:17 and :25: nothing moved; +0x42 = 3 CRASHED the client (0xC0000005,
+  read of 0x28 after an empty name hash 0x811C9DC5, callers 0x104C61/0x104E9E) - the bytes are
+  INDICES into per-squad lists, not free states. Do not brute-force them.
+- Still open: what releases t_*_frozen squads and what spawns squads without member records
+  (leads: squad +0x2C/+0x30 alive counts and watchdog FUN_00103320; the member spawn path
+  FUN_001BE9B0 -> FUN_001BDFB0 and its other callers).
