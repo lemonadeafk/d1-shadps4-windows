@@ -59,8 +59,9 @@ class Compiler:
         self.jobs = []
         os.environ["D1_ORACLE_EXTRA_TAGS"] = "%#x,%#x" % (object_state.STATE_TAG, md.OBJECTIVE_TAG)
 
-    def frame(self, entries):
-        """Queue a frame for `entries`; returns its file name."""
+    def frame(self, entries, phase=None):
+        """Queue a frame for `entries` (every frame also carries the lifetime phase: 3 = play
+        unless given); returns its file name."""
         self.n += 1
         name = "%03d.udt5" % self.n
         path = os.path.join(self.out, name)
@@ -70,8 +71,9 @@ class Compiler:
             with open(listing, "w") as f:
                 f.write("\n".join(entries))
             args = ["@" + listing]
+        env = dict(os.environ, SENSOR_FRAME_PHASE=str(phase)) if phase is not None else None
         self.jobs.append(subprocess.Popen([inject_sensor.SENSOR_FRAME, self.world, str(self.bubble), path, *args],
-                                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT))
+                                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env))
         if len(self.jobs) >= 8:
             self.flush()
         return name
@@ -148,6 +150,11 @@ class Compiler:
                 if kind == "fire":
                     c = step[2]
                     lines.append("%.2f\tfire\t%s\t%s" % (at, self.cue(c), step[3]))
+                elif kind == "phase":                   # (delay, "phase", n, name): the lifetime phase
+                    # 6 = "MISSION END: seconds remaining", 7 = post game (rewards screens),
+                    # 9 = "ROUND COMPLETED" scoreboard. Later frames carry phase 3 again, so an
+                    # ending phase must be the script's last frame. NIGHT-NOTES section 88.
+                    lines.append("%.2f\tframe\t%s\t%s" % (at, self.frame([], phase=step[2]), step[3]))
                 elif kind == "loadout":
                     import loadout_variant
                     name = "loadout-%s.txt" % step[2]

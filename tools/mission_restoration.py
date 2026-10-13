@@ -102,10 +102,16 @@ EVENT_SCRIPT = [
         WAVE,
         (0, "seq", DIALOGUE, D["m_cue1"], "seq_m_cue1"),
         (0, "members", HIVE, [WIZARD], "the wizard (sq_hive_upper_wizard01)"),
+        line(3, "o3_s012"),
     ]),
-    ((HIVE, 2, WIZARD, "dead"), [line(1, "o3_s01"), line(6, "o3_s012")]),
+    # o2 is "Kill the Hive Wizard" (user, Nav Mode): its death ends the mission - the outro line,
+    # then lifetime phase 7, the game's own post-game screens (Advancement, Activity Rewards)
+    ((HIVE, 2, WIZARD, "dead"), objective_done(1, O2, "objective o2") + [
+        (0, "seq", DIALOGUE, D["m_outro"], "seq_m_outro"),
+        (8, "phase", 7, "the mission ends: post game"),
+    ]),
     (pt(DIALOGUE, 15), [line(0, "o3_s016")]),          # pt_d_o3_s016_start
     (pt(MISSION, 14), objective_done(0, O1C, "objective o1c") + [   # obj_m1_o1c._player_trigger
         line(1, "o3_s05"),
-    ] + objective_on(4, O2, "objective o2 (phase 01)")),
+    ] + objective_on(4, O2, "objective o2: KILL THE HIVE WIZARD") + [line(1, "o3_s01")]),
 ]

@@ -2098,3 +2098,28 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   [0x273DCD0]: +0x2B48 set and +0x00 == 0 -> +0x01), else +0x50 = -1 and the clock is frozen.
   Leads for the real end: activity_complete_incident_* (an incident with investment metadata),
   c_post_game_data_component / s_post_game_reward (rewards screen), return_fireteam_to_orbit.
+
+## 88. THE ENDING: lifetime phase 7 = post game (2026-10-13 16:20-17:10, run RESEND)
+- CORRECTION to section 87: the game runs CUSA00219-129\eboot.bin (01.29; live code verified
+  byte-equal at B+va = file[va+0x4000]); CUSA00219-UPDATE\eboot.bin is a different build with
+  shifted addresses. The clock / timer addresses in 87 were read from the wrong file; in the
+  running build: stamp setter FUN_002A1EE0, network-time check FUN_00905170 (global
+  [0x2724950]: +0x2B48 = 1, +0 = 0, +1 = 1 live -> available), timer setter FUN_0011EF80,
+  evaluation FUN_0012D210 (same layout as in 87).
+- The timer display changes only when the record changes (stamped frames with the same value
+  leave it; 40 s at "10"). A real countdown needs the host to resend the timer / stamps - open.
+- Phase change -> c_activity_engine_shim vtable +0xD0 -> FUN_003DE130: new phase 6 -> FUN_005272B0
+  (MISSION END UI); 9 -> refresh flag of the scoreboard UI (+0xB1D0 on FUN_007ADCD0's object).
+  Lifetime update FUN_0011E1A3: timer in (0, 5 s) and phase 6/7 -> countdown sound.
+- PHASE 9 = "ROUND COMPLETED" scoreboard (Kills / Precision Kills / Deaths, rows empty: the
+  scoreboard record 4786c0e0 kind 15 is not served). Phases 10-14 = normal play.
+- PHASE 7 = POST GAME. world_controller in_world update FUN_007957E0 calls FUN_00795C50 ("Enter
+  post game") each frame; its gate FUN_0075CDE0 = lifetime phase (FUN_0010C430) == 7. Result
+  live: activity packages unload, investment globals + ui_cinematics load, and the game shows
+  its own post-game screens: ADVANCEMENT (Guardian, upgrades, bounties) and ACTIVITY REWARDS
+  (kills / precision / deaths / rewards, a spinner, "CONTINUE" (triangle), tabs Advancement /
+  Mission Summary). Desktop-quality screenshot: scratchpad p7sheet. No new investment request
+  was sent; the spinner waits for data (rewards = investment push? scoreboard = kind 15?).
+- Compiler step ("phase", n, name); Restoration's wizard death -> o2 done -> seq_m_outro ->
+  8 s -> phase 7. Every other frame carries phase 3, so the ending must be the last frame.
+- Next: what fills ACTIVITY REWARDS (and stops the spinner), what CONTINUE does (orbit?).
