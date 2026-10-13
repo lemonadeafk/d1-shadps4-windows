@@ -1627,3 +1627,10 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   inventory-hunter-full.bak-before-spares, char-hunter.bin / profile-hunter.bin
   .bak-before-spares, rosters-f0-hunter.bak-before-spares. fast_equip learns all four spares
   in 42 s in the background and equips each in 0.45 s (offline). NOT seen in a game yet.
+- IN GAME (20:30-20:36, runs SWAPTEST / SWAPTEST2, user at the controls): with the patch path
+  alone a swap still took ~5 s - the log split it: 0.5 s to patch, 4.5-5.5 s until the login
+  server looked at the swap file (only on the client's keepalive echo). The responder's swap
+  block is now a macro that also runs on the idle tick of its read loop (250 ms, when no reply
+  is pending): "pushed 0.1-0.3 s later". USER: "almost instant"; primary swaps feel the
+  longest, special second - the server side is the same 0.7-0.8 s for all three, so the rest is
+  the game bringing the new weapon up. Twelve swaps across all three slots, no update refused.

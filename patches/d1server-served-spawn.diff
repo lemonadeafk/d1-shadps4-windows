@@ -2348,7 +2348,7 @@ index 0000000..00d53dd
 +    Ok(w)
 +}
 diff --git a/d1-server/crates/d1-responder/src/main.rs b/d1-server/crates/d1-responder/src/main.rs
-index 6a76336..316ec45 100644
+index 6a76336..e62e719 100644
 --- a/d1-server/crates/d1-responder/src/main.rs
 +++ b/d1-server/crates/d1-responder/src/main.rs
 @@ -1211,6 +1211,34 @@ fn character_lifecycle_reply(id: u16, args: &[u8], wire_body: &[u8]) -> Option<V
@@ -2613,64 +2613,15 @@ index 6a76336..316ec45 100644
                                      // ? THE STATE-1 RACE. `historicaldocs/design/subscription-race-verdict.md`:
                                      // the client's manager tick sends 0x000C at 0x56A887 and
                                      // UNCONDITIONALLY writes descriptor state 2 at 0x56A8A7; a later
-@@ -3247,6 +3436,7 @@ async fn main() -> Result<()> {
-                                                                         // So this is only ARMED here; it is written after the
-                                                                         // ACK goes out.
-                                                                         answer_family = Some((class, root, i.sequence));
-+                                                                        family_roots.insert(class, root);
-                                                                         // ? RE-SEND DISABLED, 2026-08-08 - it was my own regression.
-                                                                         // It was added to beat the state-1 race, but the answer is
-                                                                         // a BASELINE (flags 0x01) and a second baseline on a family
-@@ -3438,6 +3628,24 @@ async fn main() -> Result<()> {
-                                                                                body ({}B): {}", b.len(),
-                                                                               b.iter().map(|x| format!("{x:02x}")).collect::<String>());
-                                                                         Some(b)
-+                                                                    } else if id == 403 {
-+                                                                        // 403 `inventory_equip_item` (request 0x80801942 = the
-+                                                                        // item SOID). Its response 0x80801834 is one field of
-+                                                                        // the SAME 0x80801796 {u4, u32} composite as
-+                                                                        // 504/701/702, so 701's body is the right shape. The
-+                                                                        // generic 2-byte answer made the client drop BAP the
-+                                                                        // first time a player equipped something (run
-+                                                                        // 20261011-000148-WIN-HUNTER).
-+                                                                        let b = d1_bap::investment_701_response_body();
-+                                                                        // The request (bit-packed item SOID) for whoever owns the
-+                                                                        // inventory state: tools\equip_service.py reads this line,
-+                                                                        // swaps the item in and answers through D1_SWAP_TRIGGER.
-+                                                                        warn!("      EQUIP REQUEST 403 body {}",
-+                                                                              plain.get(8..).unwrap_or(&[]).iter().map(|x| format!("{x:02x}")).collect::<String>());
-+                                                                        warn!("      -> native-oracle 403 inventory_equip_item response body ({}B): {}",
-+                                                                              b.len(),
-+                                                                              b.iter().map(|x| format!("{x:02x}")).collect::<String>());
-+                                                                        Some(b)
-                                                                     } else if id == 701 {
-                                                                         // 701's response schema 0x8080189B is the SAME
-                                                                         // one-composite shape as 504's, so the client's own
-@@ -3950,6 +4158,10 @@ async fn main() -> Result<()> {
-                                                                                 d1_bap::matchmaking::MM_KIND_MATCHMAKING_CONFIGURATION, 0)
-                                                                         }
-                                                                     };
-+                                                                    let mut rsp = rsp;
-+                                                                    if let Some(cfg) = mm_tuning_configuration() {
-+                                                                        rsp.configuration = Some(cfg);
-+                                                                    }
-                                                                     let b = rsp.encode();
-                                                                     warn!("      -> msg 43 matchmaking_core_response: kind={:?} nonce={:?} \
-                                                                            f4 present={} ({}B body: {})",
-@@ -4267,6 +4479,93 @@ async fn main() -> Result<()> {
-                                                             // block so `family4_span` can only have been set on an
-                                                             // EARLIER frame - the client has demonstrably processed the
-                                                             // baseline by then, i.e. the descriptor is at state 3.
-+                                                            // ? `D1_SWAP_TRIGGER=<file>` - a mid-session loadout change, as
-+                                                            // the real server sends after an equip or a scripted grant
-+                                                            // (the mission's rifle). When the file appears it is read as
-+                                                            // `NAME=value` lines that REPLACE this process's content
-+                                                            // variables (D1_CHARACTER_FILE, D1_PROFILE_FILE, D1_INVENTORY,
-+                                                            // D1_ROSTER_DIR; `FAMILIES=0,3,4` narrows the set), the family
-+                                                            // bodies are rebuilt by the same builders as the baseline, and
-+                                                            // each goes out as a DELTA (version + 1, never a second
-+                                                            // baseline - see d1_bap::queuez_span_as_delta).
-+                                                            if conn_index == 0 && inner_type == Some(d1_bap::TYPE_ECHO_REQUEST) {
+@@ -2867,6 +3056,87 @@ async fn main() -> Result<()> {
+                                     // once on the next inbound frame, by which point the client's tick
+                                     // has certainly stored state 2.
+                                     let mut resend_families: Vec<(u32, u64)> = Vec::new();
++                                    // The loadout swap (D1_SWAP_TRIGGER, see the comment at its first use): a macro so
++                                    // it can run both when a frame arrives and on the idle tick - waiting for the
++                                    // client's next keepalive cost about 5 s per equip (measured 2026-10-12).
++                                    macro_rules! push_swap { ($key:expr, $nonces:expr) => {{
++                                        use tokio::io::AsyncWriteExt;
 +                                                                let trigger_file = std::env::var_os("D1_SWAP_TRIGGER").map(std::path::PathBuf::from);
 +                                                                if let Some((path, text)) = trigger_file
 +                                                                    .and_then(|p| std::fs::read_to_string(&p).ok().map(|t| (p, t)))
@@ -2731,9 +2682,9 @@ index 6a76336..316ec45 100644
 +                                                                        };
 +                                                                        match conv.push_with_sequence(d1_bap::TYPE_QUEUEZ_OBJECT, server_seq, &delta) {
 +                                                                            Ok(push) => {
-+                                                                                let sn = nonces.peek(d1_bap::Direction::ServerToClient);
-+                                                                                if let Ok(f) = d1_bap::seal_channel_frame(key, sn, &push) {
-+                                                                                    nonces.advance(d1_bap::Direction::ServerToClient);
++                                                                                let sn = $nonces.peek(d1_bap::Direction::ServerToClient);
++                                                                                if let Ok(f) = d1_bap::seal_channel_frame($key, sn, &push) {
++                                                                                    $nonces.advance(d1_bap::Direction::ServerToClient);
 +                                                                                    if sock.write_all(&f).await.is_ok() {
 +                                                                                        warn!("      ?? SWAP: FAMILY {class} DELTA seq {server_seq} (version {version}, {} objects, {}B)",
 +                                                                                              d1_bap::queuez_span_object_count(&delta).unwrap_or(0), delta.len());
@@ -2746,12 +2697,87 @@ index 6a76336..316ec45 100644
 +                                                                        }
 +                                                                    }
 +                                                                }
++                                    }} }
+                                     loop {
+                                         // ? R2 NEEDS A CLOCK. `drain` can only synthesise a reply
+                                         // for an aged head when something calls it, and before this
+@@ -2877,6 +3147,11 @@ async fn main() -> Result<()> {
+                                         let read = tokio::time::timeout(tick, sock.read(&mut buf)).await;
+                                         match read {
+                                             Err(_elapsed) => {
++                                                if conn_index == 0 && conv.is_idle() {
++                                                    if let Some((key, nonces)) = chan.as_mut() {
++                                                        push_swap!(key, nonces);
++                                                    }
++                                                }
+                                                 if fifo && !conv.is_idle() {
+                                                     if let Some((key, nonces)) = chan.as_mut() {
+                                                         let out = drain_replies(&mut sock, key, nonces, &mut conv).await;
+@@ -3247,6 +3522,7 @@ async fn main() -> Result<()> {
+                                                                         // So this is only ARMED here; it is written after the
+                                                                         // ACK goes out.
+                                                                         answer_family = Some((class, root, i.sequence));
++                                                                        family_roots.insert(class, root);
+                                                                         // ? RE-SEND DISABLED, 2026-08-08 - it was my own regression.
+                                                                         // It was added to beat the state-1 race, but the answer is
+                                                                         // a BASELINE (flags 0x01) and a second baseline on a family
+@@ -3438,6 +3714,24 @@ async fn main() -> Result<()> {
+                                                                                body ({}B): {}", b.len(),
+                                                                               b.iter().map(|x| format!("{x:02x}")).collect::<String>());
+                                                                         Some(b)
++                                                                    } else if id == 403 {
++                                                                        // 403 `inventory_equip_item` (request 0x80801942 = the
++                                                                        // item SOID). Its response 0x80801834 is one field of
++                                                                        // the SAME 0x80801796 {u4, u32} composite as
++                                                                        // 504/701/702, so 701's body is the right shape. The
++                                                                        // generic 2-byte answer made the client drop BAP the
++                                                                        // first time a player equipped something (run
++                                                                        // 20261011-000148-WIN-HUNTER).
++                                                                        let b = d1_bap::investment_701_response_body();
++                                                                        // The request (bit-packed item SOID) for whoever owns the
++                                                                        // inventory state: tools\equip_service.py reads this line,
++                                                                        // swaps the item in and answers through D1_SWAP_TRIGGER.
++                                                                        warn!("      EQUIP REQUEST 403 body {}",
++                                                                              plain.get(8..).unwrap_or(&[]).iter().map(|x| format!("{x:02x}")).collect::<String>());
++                                                                        warn!("      -> native-oracle 403 inventory_equip_item response body ({}B): {}",
++                                                                              b.len(),
++                                                                              b.iter().map(|x| format!("{x:02x}")).collect::<String>());
++                                                                        Some(b)
+                                                                     } else if id == 701 {
+                                                                         // 701's response schema 0x8080189B is the SAME
+                                                                         // one-composite shape as 504's, so the client's own
+@@ -3950,6 +4244,10 @@ async fn main() -> Result<()> {
+                                                                                 d1_bap::matchmaking::MM_KIND_MATCHMAKING_CONFIGURATION, 0)
+                                                                         }
+                                                                     };
++                                                                    let mut rsp = rsp;
++                                                                    if let Some(cfg) = mm_tuning_configuration() {
++                                                                        rsp.configuration = Some(cfg);
++                                                                    }
+                                                                     let b = rsp.encode();
+                                                                     warn!("      -> msg 43 matchmaking_core_response: kind={:?} nonce={:?} \
+                                                                            f4 present={} ({}B body: {})",
+@@ -4267,6 +4565,19 @@ async fn main() -> Result<()> {
+                                                             // block so `family4_span` can only have been set on an
+                                                             // EARLIER frame - the client has demonstrably processed the
+                                                             // baseline by then, i.e. the descriptor is at state 3.
++                                                            // ? `D1_SWAP_TRIGGER=<file>` - a mid-session loadout change, as
++                                                            // the real server sends after an equip or a scripted grant
++                                                            // (the mission's rifle). When the file appears it is read as
++                                                            // `NAME=value` lines that REPLACE this process's content
++                                                            // variables (D1_CHARACTER_FILE, D1_PROFILE_FILE, D1_INVENTORY,
++                                                            // D1_ROSTER_DIR; `FAMILIES=0,3,4` narrows the set), the family
++                                                            // bodies are rebuilt by the same builders as the baseline, and
++                                                            // each goes out as a DELTA (version + 1, never a second
++                                                            // baseline - see d1_bap::queuez_span_as_delta).
++                                                            if conn_index == 0 {
++                                                                push_swap!(key, nonces);
 +                                                            }
 +
                                                              let f4mode = family4_invalidate_mode();
                                                              if f4mode != Family4Invalidate::Off
                                                                  && conn_index == 0
-@@ -4726,7 +5025,7 @@ mod tests {
+@@ -4726,7 +5037,7 @@ mod tests {
          assert_eq!(b503.len(), 70, "the served 503 must be the ten-flag body");
          assert_eq!(b205.len(), 50, "the served 205 must be the ten-flag body");
          assert_eq!(
