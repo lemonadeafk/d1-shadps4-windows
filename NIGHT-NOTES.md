@@ -1917,3 +1917,22 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   is the game's default with no weapon, in every state tried (GH1, GH3); the mission's
   tg_m0_gating record (kind 30) turns out to switch barrier volumes, not weapons.
 
+
+## 82. Crash statistics, the stat table, armour stats (2026-10-13 01:10-02:00, runs HUNT1-2, SLOT1-4, STAT1-2)
+- 0xBBDEDE across EVERY run on disk that reached the Wall's area (68): 7 of 21 that WALKED in
+  through the area switch crashed, 0 of 47 that STARTED inside. The trigger answers are not
+  the cause (TRIG3, GH2, HWY2, MIS3 crashed with no incident naming pt_bubble; GH2 / HWY2 / MIS3
+  had one incident in the whole run). It is the area switch itself, about 1 in 3.
+- Theory tested (host: do not repeat the entity-slot grant in the state refresh after the
+  client has freed indices): 4 runs (2 old, 2 new), 0 crashes either way - no information.
+  Kept as an OPT-IN experiment only: D1_AH_REFRESH_SLOTS=0 (d1-preservation 66291d7).
+  The emulator's richer crash report (2b3848bc) is in place for the next one.
+- CHARACTER STATS: the character's stat table is char +0x870 / peer view +0x838 (equip +0x620),
+  16 x {i8 index, i32 value}. Served now: {0: 385} and fifteen empty rows. Test (STAT2, rows
+  i = 100 + i): the character screen showed Intellect 105, Discipline 106, Strength 107, so
+  stat 5 = Intellect, 6 = Discipline, 7 = Strength (and 0 = Light 385 at the top). The bars
+  under them follow the values. Variant capture-rig\variants\statprobe (test only).
+- ARMOUR STATS are not fixed numbers in the content: armour definitions list only
+  {1: 0, 0: 0}; their talent grid (helm Prime Zealot = grid 154, also at element +0x50) has
+  nodes whose 0x808045F1 lists name stat steps (node 2: 15, 16, 17, 18). The table those
+  steps index is not found yet. Not served: no invented values.
