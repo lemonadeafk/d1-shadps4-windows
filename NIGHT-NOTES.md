@@ -1661,3 +1661,62 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   reached 48 s after launch (was 81 s). What is left: about 24 s from orbit to Earth hovered
   (the pop-ups themselves and their animations - not showing them at all would need the
   server to mark them seen) and about 25 s of the game loading the world.
+
+## 75. The user's full playthrough: every trigger of the Wall, with positions (2026-10-12 21:15-21:26, run PLAY1)
+- Launched by the autopilot (108 s), default Hunter on the "unarmed" variant, mission script +
+  trigger log. The user walked from the highway to the exit of the Wall area.
+- Banner: "A GUARDIAN RISES" (activity 163 - section 72's correction confirmed on screen).
+- BUG (mine): the room's objects were never created. The host's follow-up frames after the
+  area switch (the ones that create the kind-4 objects) and the script's injections share a
+  window; the user's triggers fired in the seconds around the switch (01:18:20-26 UTC, switch
+  at :24), the script answered them at once, and no kind-4 report ever came - the script then
+  waited for it for good. Rescued live by injecting an "exists" value with a new sequence
+  number for all 20 Wall objects and the two activity-wide ones (object_state.py ... --seq 60):
+  14 object reports at once, script resumed. TO FIX: the script must not inject during the
+  host's follow-up window, and / or the host must not let injected frames displace it.
+- The Ghost-in-hand of the "unarmed" state went away when the user crossed into the Wall's
+  area, and the touchpad no longer brought the Ghost out there (same as section 55: in the
+  Wall the pad opens Nav Mode only). Not explained.
+- The rifle: the user stood at it at 21:22:26 (obj_get_weapon trigger), but the script was
+  still walking through its timed lines and reacted at 21:22:44 - 18 s late. The user expects a
+  pick-up PROMPT there ("instead of a prompt to let me pick it up").
+- The chest (o_chest_primary_weapon, 534.9,-736.8, by pt_bridge / pt_mine): it opens and gives
+  nothing; the user remembers a "loot cache" line and a shotgun or sniper. Nothing is scripted.
+- The user could go no further than pt_exit (411,-686): the exit is not opened by the script.
+- TRIGGER MAP (trigger-log.txt of the run; kind 29 unless REGION; position = the player's):
+  21:15:41 TRIGGER 992bb471:29:31 cosmo_m0_phase00_highway.pt_ab at (328.6, -829.5, 1.9)
+  21:15:43 TRIGGER 992bb471:29:32 cosmo_m0_phase00_highway.pt_ab_1 at (328.6, -829.5, 1.9)
+  21:16:19 REGION  992bb471:28:33 cosmo_m0_phase00_highway.pm_in_wall at (327.1, -820.0, 3.8)
+  21:18:17 TRIGGER 992bb471:29:30 cosmo_m0_phase00_highway.obj_m0_phase00_m1._player_trigger at (317.9, -807.4, 8.4)
+  21:18:23 TRIGGER 3c2f5ed5:29:46 pt_in_wall_2 at (346.2, -796.2, 13.0)
+  21:18:26 TRIGGER 3c2f5ed5:29:47 pt_fallen_above at (365.4, -795.9, 13.0)
+  21:21:08 re-armed after the area switch
+  21:21:10 TRIGGER fc0e45a3:29:122 pt_nux_first_fallen_wall_climb at (390.4, -794.4, 17.1)
+  21:22:15 TRIGGER fc0e45a3:29:120 pt_nux_ghost_light_up_start at (391.7, -785.2, 17.4)
+  21:22:18 TRIGGER fc0e45a3:29:103 pt_mission02_complete at (391.8, -781.3, 17.2)
+  21:22:19 TRIGGER fc0e45a3:29:121 pt_nux_ghost_light_up_continue at (398.4, -781.6, 17.5)
+  21:22:21 TRIGGER 992bb471:29:37 cosmo_m0_phase01_breach.pf_104a_pwr._player_trigger at (407.3, -787.5, 17.5)
+  21:22:23 TRIGGER 992bb471:29:34 cosmo_m0_phase01_breach.obj_investigate_wall._player_trigger at (410.2, -792.9, 17.4)
+  21:22:23 REGION  fc0e45a3:28:123 pm_nux_ghost_light_up_fly_to_gun at (410.2, -792.9, 17.4)
+  21:22:26 TRIGGER 992bb471:29:35 cosmo_m0_phase01_breach.obj_get_weapon._player_trigger at (410.3, -793.4, 17.4)
+  21:23:11 TRIGGER fc0e45a3:29:108 pt_fallen_1b_spawn at (417.0, -813.7, 17.5)
+  21:23:14 TRIGGER 3c2f5ed5:29:48 pt_fallen_around_corner at (423.2, -814.4, 17.5)
+  21:23:17 TRIGGER fc0e45a3:29:109 pt_fallen_b_spawn at (434.6, -811.7, 17.7)
+  21:23:24 TRIGGER fc0e45a3:29:110 pt_fallen_c_spawn at (464.1, -806.0, 17.2)
+  21:23:25 TRIGGER fc0e45a3:29:118 pt_fallen_vandal_fallback at (464.7, -799.9, 17.2)
+  21:23:34 TRIGGER 3c2f5ed5:29:58 pt_fallen_melee_nux at (488.1, -791.2, 17.4)
+  21:23:35 TRIGGER fc0e45a3:29:111 pt_fallen_melee at (489.3, -797.5, 17.5)
+  21:23:43 TRIGGER 3c2f5ed5:29:56 pt_fallen_arena_spawn_nux at (514.3, -816.2, 17.5)
+  21:23:44 TRIGGER fc0e45a3:29:112 pt_fallen_arena_spawn at (520.8, -818.4, 17.6)
+  21:23:57 TRIGGER fc0e45a3:29:113 pt_bridge at (533.5, -756.5, 15.7)
+  21:24:33 TRIGGER 3c2f5ed5:29:49 pt_mine at (520.0, -721.8, 13.7)
+  21:24:35 TRIGGER 3c2f5ed5:29:57 pt_mine_nux at (523.9, -722.1, 13.7)
+  21:24:36 TRIGGER fc0e45a3:29:114 pt_corr_spawn_b at (527.4, -721.3, 13.7)
+  21:24:37 TRIGGER fc0e45a3:29:104 pt_tripmines at (531.7, -721.7, 13.8)
+  21:24:53 TRIGGER fc0e45a3:29:115 pt_corr_spawn_b_melee at (500.6, -721.7, 13.9)
+  21:24:56 TRIGGER fc0e45a3:29:116 pt_corr_spawn_b_rear at (488.8, -719.2, 13.9)
+  21:25:08 TRIGGER fc0e45a3:29:117 pt_garage_fallback at (463.9, -712.6, 13.9)
+  21:25:12 TRIGGER 3c2f5ed5:29:55 pt_audio_drone_end at (451.5, -709.8, 13.4)
+  21:25:15 TRIGGER fc0e45a3:29:106 pt_fallen_vandal_spawn at (441.4, -702.9, 11.0)
+  21:25:20 TRIGGER fc0e45a3:29:107 pt_fallen_3_spawn at (426.6, -697.9, 9.8)
+  21:25:39 TRIGGER fc0e45a3:29:119 pt_exit at (411.1, -685.6, 8.2)
