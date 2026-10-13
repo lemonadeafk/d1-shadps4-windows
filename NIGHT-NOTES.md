@@ -1619,3 +1619,11 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   character file is byte-identical to the served one. NOT run in a game yet.
 - What is left of the delay is the login server only looking for the swap file when the game
   sends a keepalive; equip_service now logs how long that takes ("pushed N s later").
+- The default Hunter got three more spares (20:35, offline): 18 Khvostov 7G-02 (3598),
+  19 Found Verdict (2229, shotgun), 20 Gjallarhorn (2085), next to the Fatebringer spare; SOIDs
+  ...0313 / 0314 / 0315; profile slots 95, 104, 114. Before changing anything
+  new_guardian.assemble() was run on the untouched inventory: character, profile and peer view
+  came out BYTE-IDENTICAL to the served files, so the same builder made the new ones. Backups:
+  inventory-hunter-full.bak-before-spares, char-hunter.bin / profile-hunter.bin
+  .bak-before-spares, rosters-f0-hunter.bak-before-spares. fast_equip learns all four spares
+  in 42 s in the background and equips each in 0.45 s (offline). NOT seen in a game yet.
