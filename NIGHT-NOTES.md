@@ -2059,4 +2059,4 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
 - So the mission walks Steppes (public 0) -> outside dome A (public 6) -> the dome (private 8).
   Start in 8 for now: RES3 loaded PRV64.64 into the world, armed, dark Hive interior, enemy arc on
   the radar, figures standing still by the red wall (likely the frozen thralls). The full route
-  needs public regions to connect (section 31's PAH protocol), the same blocker as Patrol.
+  needs public regions to connect (section 32's PAH protocol), the same blocker as Patrol.
