@@ -77,6 +77,7 @@ def main():
             try:
                 unarmed = loadout_variant.build("unarmed", {"primary": None, "special": None, "heavy": None})
                 loadout_variant.build("khvostov", {"primary": loadout_variant.KHVOSTOV, "special": None, "heavy": None})
+                loadout_variant.build("khvostov_sniper", {"primary": loadout_variant.KHVOSTOV, "special": 3606, "heavy": None})
                 lines += "D1_ROSTER_DIR=%s\nD1_CHARACTER_FILE=%s\n" % (os.path.join(unarmed, "roster"),
                                                                     os.path.join(unarmed, "char.bin"))
             except SystemExit as e:
