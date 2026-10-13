@@ -203,7 +203,7 @@ _ROOM = [
         _line(0.3, 13, "o2_36"),
         # m0_power_up (sub 4, at 410,-789) is the gate in front of the rifle: in the real
         # mission it lifts only partway, enough to crouch under (the user). Channel 2 = lift.
-        (2, "state", BREACH, "4", (0.0, 0.0, 0.35), "the gate before the rifle lifts partway"),
+        (2, "state", BREACH, "4", (0.0, 0.0, 0.5), "the gate before the rifle lifts partway"),
         _line(3, 12, "o2_35"),
         _line(6, 14, "o2_40"),
     ]),
