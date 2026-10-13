@@ -519,6 +519,9 @@ def session(args):
         for stale in (swap, swap.with_suffix(".done")):
             stale.unlink(missing_ok=True)
         env.setdefault("D1_SWAP_TRIGGER", str(swap))
+        # where equip_service keeps the finished result of every possible next equip, so the
+        # login server can push it the moment the game asks (section 73)
+        env.setdefault("D1_EQUIP_READY_DIR", str(swap.parent / "equip-ready"))
         # Character creation (section 66): tools\creation_service.py (started below) builds the
         # Guardian the player chose and pushes it through the same file.
         if args.inworld:

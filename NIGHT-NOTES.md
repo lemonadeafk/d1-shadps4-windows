@@ -1634,3 +1634,12 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   is pending): "pushed 0.1-0.3 s later". USER: "almost instant"; primary swaps feel the
   longest, special second - the server side is the same 0.7-0.8 s for all three, so the rest is
   the game bringing the new weapon up. Twelve swaps across all three slots, no update refused.
+- INSTANT (20:45, run SWAPTEST3): equip_service prepares, ahead of time, the encoded objects
+  for every item not worn (inject\equip-ready\<soid>\ + <soid:016x>.txt, 4 items in 2-3 s,
+  redone after every equip); d1-responder (D1_EQUIP_READY_DIR) copies that file onto the swap
+  file inside the 403 handler and the swap block pushes it in the same frame, logging
+  "EQUIP REQUEST ... READY" so the tool only records the new state. USER: "the swapping is
+  perfect now". An equip inside the 2-3 s re-preparation window takes the 0.5 s patch path.
+- REQUESTED NEXT (user, after this): make the unattended launch faster - from game launch to
+  the Patrol the Cosmodrome launch, "at least a minute": too many cursor movements, and too
+  long before X is pressed on the orbit pop-ups.

@@ -2348,7 +2348,7 @@ index 0000000..00d53dd
 +    Ok(w)
 +}
 diff --git a/d1-server/crates/d1-responder/src/main.rs b/d1-server/crates/d1-responder/src/main.rs
-index 6a76336..e62e719 100644
+index 6a76336..6a0d7d8 100644
 --- a/d1-server/crates/d1-responder/src/main.rs
 +++ b/d1-server/crates/d1-responder/src/main.rs
 @@ -1211,6 +1211,34 @@ fn character_lifecycle_reply(id: u16, args: &[u8], wire_body: &[u8]) -> Option<V
@@ -2721,7 +2721,7 @@ index 6a76336..e62e719 100644
                                                                          // ? RE-SEND DISABLED, 2026-08-08 - it was my own regression.
                                                                          // It was added to beat the state-1 race, but the answer is
                                                                          // a BASELINE (flags 0x01) and a second baseline on a family
-@@ -3438,6 +3714,24 @@ async fn main() -> Result<()> {
+@@ -3438,6 +3714,41 @@ async fn main() -> Result<()> {
                                                                                 body ({}B): {}", b.len(),
                                                                                b.iter().map(|x| format!("{x:02x}")).collect::<String>());
                                                                          Some(b)
@@ -2737,7 +2737,24 @@ index 6a76336..e62e719 100644
 +                                                                        // The request (bit-packed item SOID) for whoever owns the
 +                                                                        // inventory state: tools\equip_service.py reads this line,
 +                                                                        // swaps the item in and answers through D1_SWAP_TRIGGER.
-+                                                                        warn!("      EQUIP REQUEST 403 body {}",
++                                                                        // `D1_EQUIP_READY_DIR`: that tool keeps the finished objects for
++                                                                        // every item not worn in <dir>\<soid:016x>.txt (swap lines). If
++                                                                        // this item has one, it becomes the swap file NOW and the swap
++                                                                        // block further down pushes it in this same frame - no build, no
++                                                                        // polling (" READY" tells the tool the push is already done).
++                                                                        let mut ready = "";
++                                                                        if let (Some(dir), Some(trigger), Some(b)) = (
++                                                                            std::env::var_os("D1_EQUIP_READY_DIR"),
++                                                                            std::env::var_os("D1_SWAP_TRIGGER"),
++                                                                            plain.get(8..16),
++                                                                        ) {
++                                                                            let soid = u64::from_be_bytes(b.try_into().unwrap_or([0; 8]));
++                                                                            let prepared = std::path::PathBuf::from(dir).join(format!("{soid:016x}.txt"));
++                                                                            if std::fs::copy(&prepared, &trigger).is_ok() {
++                                                                                ready = " READY";
++                                                                            }
++                                                                        }
++                                                                        warn!("      EQUIP REQUEST 403 body {}{ready}",
 +                                                                              plain.get(8..).unwrap_or(&[]).iter().map(|x| format!("{x:02x}")).collect::<String>());
 +                                                                        warn!("      -> native-oracle 403 inventory_equip_item response body ({}B): {}",
 +                                                                              b.len(),
@@ -2746,7 +2763,7 @@ index 6a76336..e62e719 100644
                                                                      } else if id == 701 {
                                                                          // 701's response schema 0x8080189B is the SAME
                                                                          // one-composite shape as 504's, so the client's own
-@@ -3950,6 +4244,10 @@ async fn main() -> Result<()> {
+@@ -3950,6 +4261,10 @@ async fn main() -> Result<()> {
                                                                                  d1_bap::matchmaking::MM_KIND_MATCHMAKING_CONFIGURATION, 0)
                                                                          }
                                                                      };
@@ -2757,7 +2774,7 @@ index 6a76336..e62e719 100644
                                                                      let b = rsp.encode();
                                                                      warn!("      -> msg 43 matchmaking_core_response: kind={:?} nonce={:?} \
                                                                             f4 present={} ({}B body: {})",
-@@ -4267,6 +4565,19 @@ async fn main() -> Result<()> {
+@@ -4267,6 +4582,19 @@ async fn main() -> Result<()> {
                                                              // block so `family4_span` can only have been set on an
                                                              // EARLIER frame - the client has demonstrably processed the
                                                              // baseline by then, i.e. the descriptor is at state 3.
@@ -2777,7 +2794,7 @@ index 6a76336..e62e719 100644
                                                              let f4mode = family4_invalidate_mode();
                                                              if f4mode != Family4Invalidate::Off
                                                                  && conn_index == 0
-@@ -4726,7 +5037,7 @@ mod tests {
+@@ -4726,7 +5054,7 @@ mod tests {
          assert_eq!(b503.len(), 70, "the served 503 must be the ten-flag body");
          assert_eq!(b205.len(), 50, "the served 205 must be the ten-flag body");
          assert_eq!(

@@ -95,27 +95,77 @@ class Fast:
             except SystemExit as e:
                 print("could not learn %#x: %s" % (soid, e), flush=True)
 
-    def equip(self, soid):
-        """Patch and encode; returns the D1_SWAP_TRIGGER lines, or None if the item is not known."""
-        if soid not in self.items:
-            return None
+    lock = threading.Lock()
+
+    def _patch(self, char, peer, prof, soid):
         o, parts = self.items[soid]
-        for name, image, equip in (("char", self.char, CHAR[1]), ("peer", self.peer, PEER[1])):
+        for name, image, equip in (("char", char, CHAR[1]), ("peer", peer, PEER[1])):
             entry, perks, stats = parts[name]
             image[equip + o * 0x40:equip + o * 0x40 + 0x40] = entry
             if perks is not None:
                 k = o - WEAPONS[0]
                 image[equip + 0x5C0 + k * 0x20:equip + 0x5C0 + k * 0x20 + 0x20] = perks
                 image[equip + 0x6A0 + k * 0x80:equip + 0x6A0 + k * 0x80 + 0x80] = stats
-        struct.pack_into("<Q", self.prof, EQUIPPED_LIST + o * 8, soid)
-        os.makedirs(self.out, exist_ok=True)
-        char, prof = os.path.join(self.out, "char.bin"), os.path.join(self.out, "profile.bin")
+        struct.pack_into("<Q", prof, EQUIPPED_LIST + o * 8, soid)
+
+    def _write(self, char, peer, prof, out):
+        """Encode the three objects into `out`; returns the D1_SWAP_TRIGGER lines for them."""
+        roster = os.path.join(out, "roster")
+        src = os.path.dirname(self.peer_path)
+        if os.path.abspath(roster) != os.path.abspath(src):
+            shutil.rmtree(roster, ignore_errors=True)
+            shutil.copytree(src, roster)
+        peer_path = os.path.join(roster, os.path.basename(self.peer_path))
+        char_path, prof_path = os.path.join(out, "char.bin"), os.path.join(out, "profile.bin")
         jobs = [threading.Thread(target=_encode, args=a) for a in
-                ((CHAR[0], bytes(self.char), char), (PEER[0], bytes(self.peer), self.peer_path),
-                 (PROF[0], bytes(self.prof), prof))]
+                ((CHAR[0], bytes(char), char_path), (PEER[0], bytes(peer), peer_path), (PROF[0], bytes(prof), prof_path))]
         for j in jobs:
             j.start()
         for j in jobs:
             j.join()
         return ("D1_ROSTER_DIR=%s\nD1_CHARACTER_FILE=%s\nD1_PROFILE_FILE=%s\nFAMILIES=0,3,4\n"
-                % (os.path.dirname(self.peer_path), char, prof))
+                % (roster, char_path, prof_path))
+
+    def apply(self, soid):
+        """Make `soid` the worn item in the in-memory objects (the server already pushed it)."""
+        if soid in self.items:
+            with self.lock:
+                self._patch(self.char, self.peer, self.prof, soid)
+
+    def equip(self, soid):
+        """Patch and encode; returns the D1_SWAP_TRIGGER lines, or None if the item is not known."""
+        if soid not in self.items:
+            return None
+        self.apply(soid)
+        return self.save()
+
+    def save(self):
+        os.makedirs(self.out, exist_ok=True)
+        with self.lock:
+            images = bytes(self.char), bytes(self.peer), bytes(self.prof)
+        return self._write(*images, self.out)
+
+    def prepare(self, ready_dir, stop=lambda: False):
+        """Encode, ahead of time, the result of equipping each item that is not worn now:
+        <ready_dir>\\<soid>\\ + <ready_dir>\\<soid:016x>.txt (the swap lines). The login server
+        (D1_EQUIP_READY_DIR) answers an equip request from these at once, so a swap costs no
+        build at all. Returns the number written."""
+        with self.lock:
+            base = bytes(self.char), bytes(self.peer), bytes(self.prof)
+        n = 0
+        for soid, (o, _) in sorted(self.items.items()):
+            if stop():
+                break
+            if struct.unpack_from("<Q", base[0], CHAR[1] + o * 0x40)[0] == soid:
+                continue                          # worn already
+            images = [bytearray(x) for x in base]
+            self._patch(*images, soid)
+            lines = self._write(*images, os.path.join(ready_dir, "%016x" % soid))
+            if stop():
+                break
+            tmp = os.path.join(ready_dir, "%016x.tmp" % soid)
+            with open(tmp, "w") as f:
+                f.write(lines)
+            os.replace(tmp, os.path.join(ready_dir, "%016x.txt" % soid))
+            n += 1
+        return n

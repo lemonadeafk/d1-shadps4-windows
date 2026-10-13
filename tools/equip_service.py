@@ -161,18 +161,62 @@ def newest_run():
     return runs[-1] if runs else None
 
 
+READY = os.path.join(os.path.dirname(HERE), "inject", "equip-ready")    # D1_EQUIP_READY_DIR
+
+
+def clear_ready():
+    for f in glob.glob(os.path.join(READY, "*.txt")):
+        try:
+            os.remove(f)
+        except OSError:
+            pass
+
+
 def watch():
+    """Answer the equip requests of the newest run.
+
+    Three speeds: (1) the login server already holds the finished objects for the item
+    (inject\\equip-ready, prepared here ahead of time for every item not worn) and pushes them
+    in the same moment - this loop then only records the new state and prepares the next set;
+    (2) the item is known but nothing is prepared yet: patch + encode, about half a second;
+    (3) an item never worn: the full rebuild, about ten seconds."""
+    import threading
     run_dir = newest_run()
     log = os.path.join(run_dir, "responder.log")
     print("watching", log, flush=True)
+    os.makedirs(READY, exist_ok=True)
+    clear_ready()
     equipped = []
     offset = 0
     fast = None
-    try:                    # the quick way (tools\fast_equip.py); the rebuild below still works without it
-        import threading
+    state = {"version": 0}          # bumped on every equip: prepared files of an older version are stale
+    wake = threading.Event()
+
+    def worker():
+        try:
+            fast.warm()
+        except Exception as e:
+            print("warm failed:", e, flush=True)
+        while True:
+            version = state["version"]
+            try:
+                t0 = time.time()
+                fast.save()             # the worn set on disk (kept for a created Guardian)
+                n = fast.prepare(READY, stop=lambda: state["version"] != version)
+                if state["version"] == version:
+                    print(time.strftime("%H:%M:%S"), "prepared %d items in %.1f s" % (n, time.time() - t0), flush=True)
+                else:
+                    clear_ready()       # an equip happened meanwhile: what was written is stale
+            except (SystemExit, Exception) as e:
+                print("prepare failed:", e, flush=True)
+            while state["version"] == version:
+                wake.wait(1.0)
+                wake.clear()
+
+    try:                    # the quick ways (tools\fast_equip.py); the rebuild below works without them
         import fast_equip
         fast = fast_equip.Fast()
-        threading.Thread(target=fast.warm, daemon=True).start()
+        threading.Thread(target=worker, daemon=True).start()
     except (SystemExit, Exception) as e:
         print("fast path unavailable:", e, flush=True)
     while True:
@@ -187,32 +231,35 @@ def watch():
         end = data.rfind(b"\n") + 1
         offset += end
         for line in data[:end].decode("utf-8", "replace").splitlines():
-            m = re.search(r"EQUIP REQUEST 403 body ([0-9a-f]+)", line)
+            m = re.search(r"EQUIP REQUEST 403 body ([0-9a-f]+)( READY)?", line)
             if not m:
                 continue
             soid = soid_of(m.group(1))
             if soid is None:
                 print(time.strftime("%H:%M:%S"), "equip request not understood:", m.group(1), flush=True)
                 continue
+            clear_ready()                       # prepared for the state before this equip
             bucket = elements()[soid - BASE_SOID][0]
             equipped = [s for s in equipped if elements()[s - BASE_SOID][0] != bucket] + [soid]
-            t0 = time.time()
-            lines, how = (fast.equip(soid) if fast else None), "patched"
-            if lines is None:
-                build(equipped)
-                lines, how = swap_lines(), "rebuilt"
-            for stale in (SWAP_TRIGGER, os.path.splitext(SWAP_TRIGGER)[0] + ".done"):
-                if os.path.exists(stale):
-                    os.remove(stale)
-            with open(SWAP_TRIGGER + ".tmp", "w") as f:
-                f.write(lines)
-            os.replace(SWAP_TRIGGER + ".tmp", SWAP_TRIGGER)
-            print(time.strftime("%H:%M:%S"), "equipped %#x (%s) - %s in %.1f s" % (soid, bucket, how, time.time() - t0), flush=True)
-            t1 = time.time()            # the login server takes the file on the game's next keepalive
-            while os.path.exists(SWAP_TRIGGER) and time.time() - t1 < 15:
-                time.sleep(0.05)
-            print(time.strftime("%H:%M:%S"), "pushed %.1f s later" % (time.time() - t1), flush=True)
-        time.sleep(0.1)
+            if m.group(2) and fast:             # the login server pushed its prepared copy already
+                fast.apply(soid)
+                print(time.strftime("%H:%M:%S"), "equipped %#x (%s) - pushed by the server at once" % (soid, bucket), flush=True)
+            else:
+                t0 = time.time()
+                lines, how = (fast.equip(soid) if fast else None), "patched"
+                if lines is None:
+                    build(equipped)
+                    lines, how = swap_lines(), "rebuilt"
+                for stale in (SWAP_TRIGGER, os.path.splitext(SWAP_TRIGGER)[0] + ".done"):
+                    if os.path.exists(stale):
+                        os.remove(stale)
+                with open(SWAP_TRIGGER + ".tmp", "w") as f:
+                    f.write(lines)
+                os.replace(SWAP_TRIGGER + ".tmp", SWAP_TRIGGER)
+                print(time.strftime("%H:%M:%S"), "equipped %#x (%s) - %s in %.1f s" % (soid, bucket, how, time.time() - t0), flush=True)
+            state["version"] += 1
+            wake.set()
+        time.sleep(0.02)
 
 
 def main():
