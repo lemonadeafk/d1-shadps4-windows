@@ -262,7 +262,8 @@ EVENT_SCRIPTS = {
     # started inside the Wall: the room's own cue has already been reported, so open it up at once
     "wall": [("start", [(0, "objective", 7, ACTIVE, "objective: FIND A WEAPON"),
                         (0, "spawn", BREACH, "the Ghost appears", [95]),
-                        _line(1, 9, "o2_10")])] + _ROOM[1:],
+                        _line(1, 9, "o2_10"),
+                        (5, "fire", _pt(120), "the power-up starts")])] + _ROOM[1:],
 }
 SETTLE = {"wall": 18, "mission": 18}     # seconds after in_world before the first step
 
@@ -320,20 +321,27 @@ def wait_incident(run, offset, timeout):
     return False
 
 
+_GUEST = []      # the opened game process, kept between position reads
+
+
 def player_position():
     """The local player's position, read from the game (a diagnostic read, nothing written)."""
     try:
-        import contextlib
-        import io
-        from d1guest_win import d1guest
-        ns = argparse.Namespace(symbols=d1guest.SYMBOLS, eboot=None, ignore_build_gate=False, full_scan=False,
-                                no_cache=False, allow_dead=True, account_soid=None, require=0)
-        with contextlib.redirect_stdout(io.StringIO()):
-            _, _, proc, g = d1guest.open_guest(ns)
+        if not _GUEST:
+            import contextlib
+            import io
+            from d1guest_win import d1guest
+            ns = argparse.Namespace(symbols=d1guest.SYMBOLS, eboot=None, ignore_build_gate=False, full_scan=False,
+                                    no_cache=False, allow_dead=True, account_soid=None, require=0)
+            with contextlib.redirect_stdout(io.StringIO()):
+                _, _, proc, g = d1guest.open_guest(ns)
+            _GUEST.append((proc, g))
+        proc, g = _GUEST[0]
         pool = g.base + 0x26795E0
         elems = struct.unpack("<Q", proc.read(pool + 8, 8))[0]
         return struct.unpack("<3f", proc.read(elems + 0xE0, 12))
     except Exception:
+        del _GUEST[:]
         return None
 
 
@@ -370,7 +378,16 @@ def trigger_logger(run, bubble):
     arm(triggers)
     note("armed %d triggers" % len(triggers))
     fired, rearm_at, in_wall = set(), None, False
+    # the walked path, a point for every metre moved: <run>\path-log.txt (time x y z). A real
+    # playthrough's path is what the test walker follows - straight lines between trigger
+    # positions run into scenery (runs EV1 / EV2 / W1).
+    path, last = open(os.path.join(run, "path-log.txt"), "a", encoding="utf-8"), None
     while os.path.isdir(run):
+        here = player_position()
+        if here and (last is None or sum((a - b) ** 2 for a, b in zip(here, last)) > 1.0):
+            last = here
+            path.write("%s %.2f %.2f %.2f\n" % ((time.strftime("%H:%M:%S"),) + tuple(here)))
+            path.flush()
         for when, group, kind, sub, body in watcher.poll():
             key = "%08x:%d:%d" % (group, kind, sub)
             if kind == 4 and group == int(BREACH, 16) and sub == 0 and not in_wall:
