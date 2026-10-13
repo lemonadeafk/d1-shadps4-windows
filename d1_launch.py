@@ -412,7 +412,12 @@ def session(args):
             if (g / "char.bin").exists():
                 env.update(D1_INVENTORY=str(g / "inventory"), D1_CHARACTER_FILE=str(g / "char.bin"),
                            D1_PROFILE_FILE=str(g / "profile.bin"), D1_ROSTER_DIR=str(g / "roster"))
-                log(f"serving the created Guardian in {g}")
+                # its own story progress: the flags its completed missions set, re-read by the
+                # login server at every 503 / 205 (tools\progress.py, NIGHT-NOTES section 90)
+                sys.path.insert(0, str(Path(__file__).resolve().parent / "tools"))
+                import progress
+                env.setdefault("D1_UNLOCK_FLAGS_FILE", progress.ensure(g.name))
+                log(f"serving the created Guardian in {g}, flags {env['D1_UNLOCK_FLAGS_FILE']}")
         # run-boot.sh's pinned account/character environment (lines 87-220). Without the push at
         # `echo`, families 4 then 3, investment_signin has nothing to satisfy it and the client
         # gives up with error.no_investment_connection ("chicken") - seen here on 2026-10-10.

@@ -12,7 +12,9 @@ the game's own XP curve), then hands both objects to the login server through D1
 the same path an equip uses - which pushes them to the running game.
 
 A kill incident's type list holds 0x2C2 and 0x8EF (11 thrall kills + the wizard in run RESPLAY);
-the victim-specific ids tell the enemy apart (thrall 0x94B, wizard 0xC60).
+the victim-specific ids tell the enemy apart (thrall 0x94B, wizard 0xC60). When the mission
+engine sends the post-game phase, the mission's completion flag goes into the Guardian's own
+flags (tools\progress.py).
 XP AMOUNTS ARE PLACEHOLDERS (XP_PER below): the real values are in the investment content's
 incident rewards, not decoded yet.
 """
@@ -31,6 +33,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import finish_character as fc  # noqa: E402
 import new_guardian as ng  # noqa: E402
+import progress  # noqa: E402
 
 SWAP_TRIGGER = os.path.join(os.path.dirname(HERE), "inject", "loadout-swap.txt")
 INCIDENT = "0x8080097D"
@@ -44,6 +47,7 @@ CHARACTER_LEVEL = 117
 PUSH_EVERY = 3.0                   # seconds: kills close together go out as one push
 LINE = re.compile(r"CAPTURED udt 18 \(incident\) payload: ([0-9a-f]+)")
 MISSION_END = "mission ends: post game"
+ACTIVITY = re.compile(r"publishing activity INDEX (\d+)")
 
 
 def level_of(xp):
@@ -124,6 +128,11 @@ def main():
     run = newest_run()
     log = os.path.join(run, "activity-host.log")
     print(time.strftime("%H:%M:%S"), "XP service: %s at %d XP (level %d), following %s" % (name, xp, level_of(xp), run), flush=True)
+    # read from the start once for the activity the host publishes, then only new lines
+    activity = None
+    if os.path.exists(log):
+        m = ACTIVITY.search(open(log, encoding="utf-8", errors="replace").read())
+        activity = int(m.group(1)) if m else None
     offset, pending, since = os.path.getsize(log) if os.path.exists(log) else 0, 0, None
     while True:
         if os.path.exists(log):
@@ -144,6 +153,12 @@ def main():
                     pending += XP_MISSION
                     since = since or time.time()
                     print(time.strftime("%H:%M:%S"), "mission complete +%d XP" % XP_MISSION, flush=True)
+                    # its completion flag: the Director opens the next node back in orbit
+                    if activity is not None and not a.dry_run:
+                        print(time.strftime("%H:%M:%S"), "activity %d completed, flags added %s"
+                              % (activity, progress.complete(name, activity)), flush=True)
+                elif ACTIVITY.search(line):
+                    activity = int(ACTIVITY.search(line).group(1))
         if pending and time.time() - since >= PUSH_EVERY:
             before = level_of(xp)
             xp += pending

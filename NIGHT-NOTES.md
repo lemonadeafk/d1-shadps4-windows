@@ -2158,3 +2158,19 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
 - Unlock flags are served account-wide (503/205); per-character completion storage is still open.
 - Created Guardian: the Director opens on Earth (no solar system view), so autopilot's Tower route
   fails; use --stop-at orbit. The autopilot pressed Launch once after reaching orbit - stop it.
+
+## 90. Per-Guardian story progress (2026-10-13 19:30, offline - no game run)
+- The client files do not link an activity to the flag its completion sets (the original server
+  held that: manifest completionFlagHash). No flag hash appears in the activity table (0 hits for
+  11 flags); the client works in flag ordinals.
+- d1-responder: D1_UNLOCK_FLAGS_FILE (wins over D1_UNLOCK_FLAGS) is re-read at every 503 / 205.
+  The client asks 205 on each return to orbit (seen in RESEND), so flags written while playing
+  reach the Director without a restart. NOT YET VERIFIED LIVE.
+- tools\progress.py: capture-rig\guardians\<name>\flags.txt = account defaults + 2837 (prologue)
+  for a new Guardian; complete(name, activity) adds COMPLETION[activity] (163 -> 132, 165 -> 134:
+  read off the Director chain, TO VERIFY) and for 163 also 836 (prologue done) + 101 (Patrol;
+  which mission grants it is a guess) and drops 2837. d1_launch.py points D1_UNLOCK_FLAGS_FILE at
+  it for a created Guardian. tools\xp_service.py calls complete() when the mission engine sends
+  the post-game phase ("mission ends: post game"), using the activity INDEX the host publishes.
+- Missing for the loop: A Guardian Rises has no ending yet (its script stops at the Divide), so a
+  new Guardian cannot complete it; the flag-132 check (one launch, the user names the node).
