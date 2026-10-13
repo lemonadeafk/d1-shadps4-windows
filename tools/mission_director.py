@@ -179,13 +179,15 @@ _ROOM = [
         (16, "objective", 7, ACTIVE, "objective: FIND A WEAPON (after the area switch)"),
         (0, "spawn", BREACH, "the Ghost appears", [95]),
         _line(1, 9, "o2_10"),
+        # the user walks straight to the gate (390,-794) and does not cross 120 before it
+        # (run PLAY2), so the power-up follows the Ghost's first line
+        (5, "fire", _pt(120), "the power-up starts"),
     ]),
     # pt_nux_first_fallen_wall_climb: crossed in the corridor, around (356,-796) (run EV2; the
     # user's log shows it later only because it was re-armed late).
     (_pt(122), [
         (0, "seq", DIALOGUE, 33, "seq_fallen_scream_far"),      # (the nest squads would attack an unarmed player)
         _line(2, 10, "o2_20"),
-        (40, "fire", _pt(120), "the power-up without its trigger (not crossed in 40 s)"),
     ]),
     # pt_nux_ghost_light_up_start (392,-785): in the dark room, before the gate. The power-up
     # is the Ghost's doing, so it runs from here on short gaps (was 75 s of standing around).
@@ -504,7 +506,7 @@ def main():
     if not a.linear and a.script in EVENT_SCRIPTS:
         # Event script: each cue's steps start the moment the game first reports that record.
         table = [(c if c == "start" else (int(c[0], 16),) + tuple(c[1:]), steps) for c, steps in EVENT_SCRIPTS[a.script]]
-        first = {}                  # record -> its first reported value, for the "changed" cues
+        first, born = {}, {}        # record -> its settled value / when first reported, for the "changed" cues
         fired = set()
 
         def run_cue(steps):
@@ -543,7 +545,14 @@ def main():
                     play((0, "state", ACTIVITY, "0,6", (0.0, 0.0, 0.0), "the mission's objects"))
             for r in watcher.poll():
                 fire(r[1:4])
-                if first.setdefault(r[1:4], r[4]) != r[4]:
+                # the host's frames after an area switch change every object's value for 15 s
+                # (run PLAY2: the chest cue fired 6 s after the switch): the value to compare
+                # with is the one reported once those are over
+                if r[1:4] not in born:
+                    born[r[1:4]] = time.time()
+                elif time.time() - born[r[1:4]] < 30:
+                    first[r[1:4]] = r[4]
+                elif first.setdefault(r[1:4], r[4]) != r[4]:
                     fire(r[1:4] + ("changed",))
             time.sleep(0.2)
         return

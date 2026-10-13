@@ -1753,3 +1753,25 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   (stairs' edge at 331,-820; corridor at 356,-795 and 376,-790).
 - Seen in EV2: the Ghost stays in the open hand inside the Wall too (the user's PLAY1 report
   that it left the hand at the switch is not reproduced).
+
+## 77. The user's second playthrough: two script bugs and a crash at the pf_104a_pwr trigger (2026-10-12 21:52-21:58, run PLAY2)
+- The race fix held again: breach_group reported 6 s after the switch, cues before it fired.
+- BUG 1 (fixed): the "changed" chest cue fired 6 s after the switch - the host's follow-up
+  frames change every object's reported value - and handed over Khvostov + sniper at the
+  gate. Now the value compared with is the one reported 30 s after the object first appears.
+  The unarmed variant was pushed back by hand at 21:54:51.
+- BUG 2 (fixed): the power-up waited for pt_nux_ghost_light_up_start (392,-785). The user
+  walks straight to the gate (390,-794) and never crosses it first, so only the 40 s fallback
+  started it. It now starts 5 s after the Ghost's first line in the room. Also:
+  pt_nux_first_fallen_wall_climb fires for the user only at the re-arm (17 s after the
+  switch), i.e. when already at the gate.
+- CRASH at 21:57:39, the same instant the game reported the pf_104a_pwr trigger (992bb471
+  29:37): access violation reading 0x4f at 0x5c7dede (rcx=0x4f), callers 0x5c120a9 0x5c11efc
+  0x5c73909 0x5ba18d5. Module base 0x50c0000 -> 0xBBDEDE: THE SAME SITE as the pt_bubble crash
+  of section 70. In PLAY1 the same trigger fired without a crash. Differences in PLAY2 (cause
+  not established): weapons handed over and taken away again before the rifle; the room's
+  objects created by the host's frames instead of the hand injection; 2.5 minutes between
+  the gate opening and the trigger.
+- USER REQUIREMENT: the rifle and the chest weapon must be picked up by holding Square, as in
+  the real game - never appear in the inventory on arrival. The chest already shows the
+  game's own prompt; what makes o_weapon interactable is not found yet.
