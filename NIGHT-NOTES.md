@@ -2024,3 +2024,19 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   creates weapon objects only for actors' gear. Not solvable from the server with what is known.
 - new_user_experience (kind 39, def 0x80cd0c35): 35 entries of {name hash, u32, u32, u32 1, u32},
   all unset in the content - the server fills them; not linked to weapons as far as seen.
+
+## 86. Restoration (activity 165) loads into the world (2026-10-13 14:15-14:45, runs RES1, RES2)
+- World act_cosmo_m1_dome_a: scenario_client 0x80cb804b, group 0xff4a0c1a, checksum 0x42fe77a5,
+  22 bubbles. `autopilot.py --director --destination restoration`.
+- RES1 (bubble 0) stalled in initial_slice_set_loading: "Region 'PUB00.00' is PUBLIC but not yet
+  connected". The same bubble hash is public here and in the highway world.
+- PUBLIC/PRIVATE is the low bit of the third u32 of the bubble body (body = region hash, bubble
+  tag, FLAGS, 0x80800184 ...): highway bubble 0 = 0x00010000 (PUB00), bubble 3 = 0x00000001
+  (PRV24). Restoration private bubbles: 1 3 4 5 8 10 13 14 16 17 18 19 21.
+- The world's phase list (0x8080073F) here has 3 entries (749b9dcf/3, 1bd2fa6c/3, 070b2229/2) and
+  no flag-2 bubbles, so the phase hashes do not point at a bubble the way the highway's do.
+- RES2 (bubble 3 = PRV24.24): in world, armed, hands and HUD normal, no Ghost lock. Bubble 3
+  carries the mission's records: objectives ff4a0c1a kind 32 subs 0/3/6/9, sequences, player
+  triggers; no squad members. Objective 0 served with state 1 (inject_sensor, world 0x80cb804b)
+  -> "NEW MISSION - RESTORATION" banner. Whether bubble 3 is the real mission start is not yet
+  known (dark interior with railings, stars visible).
