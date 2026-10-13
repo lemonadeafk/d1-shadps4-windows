@@ -79,7 +79,7 @@ index ba405fc..08c627d 100644
  
  /// ⭐ Inbound ids this Activity Host **deliberately does not decode**, with the reason - so the run
 diff --git a/d1-server/crates/d1-activity-host/src/listener.rs b/d1-server/crates/d1-activity-host/src/listener.rs
-index c535359..90d9e6a 100644
+index c535359..b7876d0 100644
 --- a/d1-server/crates/d1-activity-host/src/listener.rs
 +++ b/d1-server/crates/d1-activity-host/src/listener.rs
 @@ -151,6 +151,9 @@ pub struct AhConnection {
@@ -100,7 +100,21 @@ index c535359..90d9e6a 100644
          }
      }
  
-@@ -381,7 +385,18 @@ impl AhConnection {
+@@ -372,6 +376,13 @@ impl AhConnection {
+         let mut events = Vec::new();
+         // ⭐ Deliberate non-decode, stated as such. See `AhEvent::NotDecoded`.
+         events.extend(self.capture_once(udt, payload));
++        if udt == 18 {
++            // an incident: its prepared answer, if there is one, goes out with this very frame
++            for push in self.instance.incident_answers(payload) {
++                events.push(AhEvent::WantsToPush { user_defined_type: push.message.user_defined_type() });
++                events.extend(self.try_push(push));
++            }
++        }
+         if let Some(why) = crate::codec::undecodable_reason(udt) {
+             events.push(AhEvent::NotDecoded {
+                 user_defined_type: udt,
+@@ -381,7 +392,18 @@ impl AhConnection {
              });
              return events;
          }
@@ -120,7 +134,7 @@ index c535359..90d9e6a 100644
              Ok(i) => i,
              Err(e) => {
                  events.push(AhEvent::NamedGate { what: "AH wire codec", detail: e.to_string() });
-@@ -496,6 +511,13 @@ impl AhConnection {
+@@ -496,6 +518,13 @@ impl AhConnection {
              });
              events.extend(self.try_push(push));
          }
@@ -134,7 +148,7 @@ index c535359..90d9e6a 100644
          let mut out = self.conv.drain(now);
          out.extend(self.pending_pushes.drain(..));
          let sealed = self.seal_all(out, &mut events);
-@@ -508,7 +530,11 @@ impl AhConnection {
+@@ -508,7 +537,11 @@ impl AhConnection {
      /// motivated this, and ten copies of one byte is not ten vectors. The first is the one worth
      /// keeping - it is the one sent from a known state.
      fn capture_once(&mut self, udt: u32, payload: &[u8]) -> Vec<AhEvent> {
@@ -147,7 +161,7 @@ index c535359..90d9e6a 100644
              vec![payload_event(udt, payload)]
          } else {
              Vec::new()
-@@ -609,12 +635,20 @@ async fn drive(
+@@ -609,12 +642,20 @@ async fn drive(
      let mut buf: Vec<u8> = Vec::new();
      let mut chunk = [0u8; 8192];
      tracing::info!("AH connection from {peer}");
@@ -670,7 +684,7 @@ index 4e17610..27f1d72 100644
      pub fn pah_region_id(&self) -> u32 {
          let o = Self::PAH_REGIONS + Self::PAH_REGION_ID;
 diff --git a/d1-server/crates/d1-activity-host/src/state.rs b/d1-server/crates/d1-activity-host/src/state.rs
-index 891ceb8..24a5792 100644
+index 891ceb8..0dfbb6f 100644
 --- a/d1-server/crates/d1-activity-host/src/state.rs
 +++ b/d1-server/crates/d1-activity-host/src/state.rs
 @@ -171,6 +171,8 @@ pub struct ActivityInstance {
@@ -682,7 +696,7 @@ index 891ceb8..24a5792 100644
      /// ⭐⭐ The bubble count published at `global_activity_state+0x10` (and the `0xFF` unchosen
      /// bytes at `+0x14`). `FUN_002A0320` runs right after the checksum passes and requires this to
      /// equal the world's scenario bubble count (`orbit` = 16). `0` = every run to date =
-@@ -222,8 +224,29 @@ pub struct ActivityInstance {
+@@ -222,8 +224,32 @@ pub struct ActivityInstance {
      /// content record exists**, and the applier drops it silently (task #4) - so a repeating send
      /// is how at least one copy arrives after the world is resident.
      sensor_repeat: Option<Duration>,
@@ -700,6 +714,9 @@ index 891ceb8..24a5792 100644
 +    /// as one udt-5 `sensor_auth_update` payload and renamed `*.sent`. Built with
 +    /// `d1-oracle` example `sensor_frame`. A live experiment channel - off unless set.
 +    inject_dir: Option<std::path::PathBuf>,
++    /// ⭐ `D1_AH_INCIDENT_READY_DIR`: answers to player-trigger incidents, prepared ahead of
++    /// time. See [`Self::incident_answers`].
++    incident_ready_dir: Option<std::path::PathBuf>,
 +    /// Per-bubble sensor frames keyed by region id; a transition into that region re-arms the
 +    /// sender with it (each bubble loads its own squad/objective groups).
 +    bubble_sensor_payloads: std::collections::BTreeMap<u32, Vec<u8>>,
@@ -712,7 +729,7 @@ index 891ceb8..24a5792 100644
  }
  
  impl ActivityInstance {
-@@ -306,6 +329,7 @@ impl ActivityInstance {
+@@ -306,6 +332,7 @@ impl ActivityInstance {
              // 0 is what every run so far sent, and naming what 0 means is the point.
              activity_index: 0,
              activity_checksum: 0,
@@ -720,7 +737,7 @@ index 891ceb8..24a5792 100644
              bubble_count: 0,
              bubble_chosen: Vec::new(),
              pah_region: None,
-@@ -320,6 +344,14 @@ impl ActivityInstance {
+@@ -320,6 +347,15 @@ impl ActivityInstance {
              sensor_sent: false,
              sensors_sent: 0,
              sensor_repeat: None,
@@ -729,16 +746,67 @@ index 891ceb8..24a5792 100644
 +            sensor_follow_max: None,
 +            current_region: 0,
 +            inject_dir: std::env::var_os("D1_AH_SENSOR_INJECT_DIR").map(std::path::PathBuf::from),
++            incident_ready_dir: std::env::var_os("D1_AH_INCIDENT_READY_DIR").map(std::path::PathBuf::from),
 +            bubble_sensor_payloads: std::collections::BTreeMap::new(),
 +            sensor_alt_payload: None,
 +            bubble_sensor_alt_payloads: std::collections::BTreeMap::new(),
              sensor_last_sent: None,
          }
      }
-@@ -435,6 +467,87 @@ impl ActivityInstance {
+@@ -435,6 +471,137 @@ impl ActivityInstance {
          self.sensor_repeat = Some(every);
      }
  
++    /// The prepared answers to one udt-18 `incident`.
++    ///
++    /// An enabled player trigger (record kind 29) makes the client send an incident about ten
++    /// times a second for as long as the player stands in its volume, until the server turns
++    /// the trigger off. Answering through the injection folder took about a second (a script
++    /// reads the log, builds the frame, the host picks it up); a client that was still sending
++    /// when part of the world was deleted crashed (0xBBDEDE, 2026-10-12 run PLAY2). So the
++    /// answer is prepared: `<dir>/<group:08x>-<sub>.udt5` is a finished sensor frame, and it is
++    /// sent in the same frame the first incident naming that record arrives. The record's name
++    /// reference is 55 bits, most significant first, at any bit offset of the payload:
++    /// u32 group, 7 bits kind + 1, 16 bits sub + 0x8000.
++    pub fn incident_answers(&mut self, payload: &[u8]) -> Vec<AhPush> {
++        let Some(dir) = &self.incident_ready_dir else { return Vec::new() };
++        let Ok(rd) = std::fs::read_dir(dir) else { return Vec::new() };
++        let bits: Vec<u8> = payload.iter().flat_map(|b| (0..8).rev().map(move |i| (b >> i) & 1)).collect();
++        let mut out = Vec::new();
++        for path in rd.filter_map(|e| e.ok()).map(|e| e.path()) {
++            if path.extension().and_then(|x| x.to_str()) != Some("udt5") {
++                continue;
++            }
++            let Some((group, sub)) = path
++                .file_stem()
++                .and_then(|x| x.to_str())
++                .and_then(|x| x.split_once('-'))
++                .and_then(|(g, s)| Some((u32::from_str_radix(g, 16).ok()?, s.parse::<u32>().ok()?)))
++            else {
++                continue;
++            };
++            const KIND_PLAYER_TRIGGER: u64 = 29;
++            let want = ((group as u64) << 23) | ((KIND_PLAYER_TRIGGER + 1) << 16) | (sub as u64 + 0x8000);
++            let found = bits.len() >= 55
++                && (0..=bits.len() - 55)
++                    .any(|at| bits[at..at + 55].iter().fold(0u64, |v, b| (v << 1) | *b as u64) == want);
++            if !found {
++                continue;
++            }
++            if let Ok(frame) = std::fs::read(&path) {
++                if frame.is_empty() {
++                    continue;
++                }
++                tracing::info!("⭐ incident names {group:08x}:{sub}: sending its prepared answer ({} bytes)", frame.len());
++                let _ = std::fs::rename(&path, path.with_extension("sent"));
++                self.sensors_sent += 1;
++                self.sensor_burst_base += 1;
++                out.push(AhPush::new(self.ah_id, AhMessage::SensorAuthUpdate { payload: frame }));
++            }
++        }
++        out
++    }
++
 +    /// Frames dropped into [`Self::inject_dir`] since the last tick, oldest name first.
 +    pub fn injected_due(&mut self) -> Vec<AhPush> {
 +        let Some(dir) = &self.inject_dir else { return Vec::new() };
@@ -823,7 +891,7 @@ index 891ceb8..24a5792 100644
      /// ⭐⭐ The udt-5 `sensor_auth_update`, sent **once** after the instance reaches [`Live`]
      /// (or on an interval, in [`Self::set_sensor_repeat`] mode).
      ///
-@@ -462,6 +575,11 @@ impl ActivityInstance {
+@@ -462,6 +629,11 @@ impl ActivityInstance {
              }
              // Repeat mode: pace on the interval since the last send.
              Some(every) => {
@@ -835,7 +903,7 @@ index 891ceb8..24a5792 100644
                  if let Some(last) = self.sensor_last_sent {
                      if now.saturating_duration_since(last) < every {
                          return None;
-@@ -469,7 +587,13 @@ impl ActivityInstance {
+@@ -469,7 +641,13 @@ impl ActivityInstance {
                  }
              }
          }
@@ -850,7 +918,7 @@ index 891ceb8..24a5792 100644
          self.sensor_sent = true;
          self.sensor_last_sent = Some(now);
          self.sensors_sent += 1;
-@@ -510,6 +634,7 @@ impl ActivityInstance {
+@@ -510,6 +688,7 @@ impl ActivityInstance {
          s.set_activity_index(self.activity_index);
          // ⭐⭐ The field that aborts rung 33's world transition when it disagrees with content.
          s.set_activity_checksum(self.activity_checksum);
@@ -858,7 +926,7 @@ index 891ceb8..24a5792 100644
          // ⭐⭐ The bubble count + unchosen bytes that FUN_002A0320 validates right after. Bounded
          // to the 64-byte field; a too-large count is a config error, so publish what we can and let
          // the loud "bubble count mismatch" name a wrong number rather than silently truncating.
-@@ -518,6 +643,20 @@ impl ActivityInstance {
+@@ -518,6 +697,20 @@ impl ActivityInstance {
          // field, so order is load-bearing. An all-`0xFF` blob passes rung 33 and then UNREGISTERS
          // every slice-set region, which is rung 34's `error.sstm_slice_not_found`.
          let _ = s.set_bubble_chosen(&self.bubble_chosen);
@@ -879,7 +947,7 @@ index 891ceb8..24a5792 100644
          AhPush::new(self.ah_id, AhMessage::GlobalActivityState(s))
      }
  
-@@ -586,6 +725,23 @@ impl ActivityInstance {
+@@ -586,6 +779,23 @@ impl ActivityInstance {
          // the operator reads it; every re-publish after it logs at DEBUG, because a refresh every
          // few seconds repeating the same receipt turns the run log into noise and hides the
          // warnings. The condition is the join/refresh discriminator we already track.
@@ -903,7 +971,7 @@ index 891ceb8..24a5792 100644
          match self.pah_region {
              Some((region, peer, token)) => match m.set_pah_region(region, peer, token) {
                  Ok(()) if first => tracing::info!(
-@@ -817,13 +973,71 @@ impl ActivityInstance {
+@@ -817,13 +1027,71 @@ impl ActivityInstance {
              //
              // Accepted and recorded, not acted on. A stub with one peer has nothing to reserve
              // against, and `43 reservations_failed` is for failures we cannot have.
@@ -977,7 +1045,7 @@ index 891ceb8..24a5792 100644
      /// Advance the replication epoch. `[C]` a `u8`; the wire payload is `{u8 epoch, u8 suppress}`.
      ///
      /// Nothing in a stub needs to call this - it exists because the epoch is authoritative state
-@@ -894,6 +1108,13 @@ impl ActivityInstance {
+@@ -894,6 +1162,13 @@ impl ActivityInstance {
          self.activity_checksum = checksum;
      }
  

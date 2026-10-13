@@ -362,6 +362,8 @@ def trigger_logger(run, bubble):
     # NOT pt_bubble (the Wall's sub 105): armed, it fires in the corridor (x ~355) and the game
     # dies within a second (render job, 0xBBDEDE; runs TRIG1 / TRIG2 and a live test in TRIG3).
     unsafe = {(int(BREACH, 16), 105)}
+    if os.environ.get("MISSION_ARM_UNSAFE"):        # test: arm it too
+        unsafe = set()
     triggers = sorted((g, sub) for (g, sub), kind in known.items() if kind == 29 and (g, sub) not in unsafe)
     watcher = sense_reports.Watcher(run, bubble, WORLD[2:])
     out = open(os.path.join(run, "trigger-log.txt"), "a", encoding="utf-8")
@@ -375,6 +377,36 @@ def trigger_logger(run, bubble):
         out.write("%s %s\n" % (time.strftime("%H:%M:%S"), text))
         out.flush()
 
+    # The answer to each trigger (turn it off again) is prepared before it is armed: the
+    # activity host (D1_AH_INCIDENT_READY_DIR) sends it in the frame the trigger's first
+    # incident arrives, instead of about a second later through this script. A trigger left
+    # firing while part of the world was deleted crashed the game (section 80).
+    ready = os.path.join(inject_sensor.INJECT, "trigger-ready")
+    os.makedirs(ready, exist_ok=True)
+    for old in os.listdir(ready):
+        os.remove(os.path.join(ready, old))
+
+    def prepare(which):
+        import subprocess
+        jobs = []
+        for g, sub in which:
+            out_path = os.path.join(ready, "%08x-%d.udt5" % (g, sub))
+            tmp = out_path + ".tmp"
+            jobs.append((subprocess.Popen([inject_sensor.SENSOR_FRAME, WORLD, str(bubble), tmp,
+                                           "%#x:%d:0000000000000000" % (g, sub)],
+                                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL), tmp, out_path))
+            if len(jobs) >= 6:
+                for p, tmp, out_path in jobs:
+                    if p.wait() == 0 and os.path.exists(tmp):
+                        os.replace(tmp, out_path)
+                jobs = []
+        for p, tmp, out_path in jobs:
+            if p.wait() == 0 and os.path.exists(tmp):
+                os.replace(tmp, out_path)
+
+    t0 = time.time()
+    prepare(triggers)
+    note("prepared %d answers in %.1f s" % (len(os.listdir(ready)), time.time() - t0))
     arm(triggers)
     note("armed %d triggers" % len(triggers))
     fired, rearm_at, in_wall = set(), None, False

@@ -1831,3 +1831,51 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   0.18 x 0.63 and 0.53 x 0.24). The size comes from the game's vertices; whether it is larger
   than on a console is not known. Highway and character screen checked with the new build:
   no crash, Guardian lit, the sun's flare ghosts on the far side of the screen as expected.
+
+## 80. The trigger crash (0xBBDEDE): cause found, answered in the host; the rifle is a prop (2026-10-12 23:05-23:40, runs W1, REC1, BUB1)
+- EVENT SCRIPT, live (W1, started inside the Wall, test walker on the USER'S route): gate ->
+  obj_investigate_wall -> GRAB THE RIFLE -> obj_get_weapon -> rifle gone + Khvostov ->
+  FIGHT THROUGH THE WALL -> first Fallen -> pt_fallen_1b_spawn / around_corner / b_spawn all
+  fired and were answered. No crash. The way to the rifle is NOT straight east from the gate:
+  (391.7,-785.2) (391.8,-781.3) (398.4,-781.6) (407.3,-787.5) (410.2,-792.9) - the user's
+  trigger positions. Straight lines between far-apart points run the walker into scenery.
+- New: the trigger logger also writes <run>\path-log.txt (a point per metre walked), so the
+  next real playthrough gives the walker a route for the whole mission.
+- THE CRASH. Access violation at 0xBBDEDE = c_simulation_sobject_entity_definition vtable
+  slot 19, called from FUN_00B51FE0 with a c_rsat_detect_stale_references_processor: the
+  simulation's "detect stale references" pass over an entity whose type entry in the table at
+  0x2869CA8 (0x80 B per type, descriptor pointer at +0x30) holds 0x4F instead of a pointer.
+  Seen (a) every time with pt_bubble armed (it sits where the area switch deletes the old
+  area's objects), (b) once at pf_104a_pwr's trigger in the user's run PLAY2.
+  What the two have in common: an ENABLED player trigger keeps the client sending udt-18
+  incidents (about 10 a second) until the server turns it off, and the script took about a
+  second to do that (log poll + sensor_frame.exe + the host's pick-up).
+- FIX: the answer is prepared. tools\mission_director.py builds a "turn off" frame for every
+  trigger before arming (45 frames, 9.6 s, six at a time) into inject\trigger-ready\
+  <group>-<sub>.udt5; d1-activity-host (D1_AH_INCIDENT_READY_DIR, set by d1_launch.py) finds
+  the record's 55-bit name reference in the incident payload and sends the frame with the same
+  inbound frame. BUB1, pt_bubble armed on purpose (MISSION_ARM_UNSAFE=1): fired at
+  (352.9,-798.4), answered in the same millisecond, the game stayed up (it died within a
+  second in TRIG1 / TRIG2 / TRIG3). One run, so "strong evidence", not proof. pt_bubble stays
+  un-armed by default - nothing needs it.
+- THE RIFLE HAS NO INTERACTION OF ITS OWN (the user expects "hold Square"):
+  * o_weapon (992bb471 kind 4 sub 6) is prefab 0x80cb828c = display entity 0x80cb82d4 +
+    0x80a3d2c8; its live object is type 1 (scenery), not type 11 (weapon). The chest
+    (o_chest_primary_weapon, prefab 0x80cb82a8, live type 2) has the same display-entity family
+    (0x80aab441) - whose component 0x80801bef lists 20 entries where the rifle's lists 0 - plus
+    a state definition (0x80cb83d8). The chest shows the game's own "Open Chest" prompt.
+  * No rifle wording in the game's text: the mission bank has only "Grab the Rifle" (the
+    objective); the interaction banks (80aae4b5 HUD, 80aae5bb, 80aae5c3) have "Take",
+    "Interact", "Open Chest", "Collect Loot", "Pick Up Relic / Scorch Cannon ..." - nothing
+    for the rifle. c_action_impl_weapon_pickup (FUN_00399360) needs a type-11 weapon object.
+  * What the mission data does have at the rifle is obj_get_weapon._player_trigger (a volume).
+  So, as far as the data shows, the rifle is taken by walking into that volume - what the
+  script does now (1.5 s after the trigger). A button prompt would have to be invented.
+  Not proven: the server could have attached something that is not in the packages.
+- Other records looked at: kind 39 new_user_experience (4786c0e0 sub 4, value 0x2C8 B =
+  12 B + 35 x {name hash, u32, u32, u32 1, u32}; the setter FUN_00406E20 only copies it) - the
+  tutorial toasts ("Super Charged ..."), not weapon gating. Kind 30 tg_m0_gating (setter
+  FUN_0012C900): value {name ref, u8 state}; a ref of kind 0x3A is a volume switched on / off
+  (FUN_0012F1D0 / FUN_0012EEB0), anything else goes to a manager's vtable +0x128 - a toggle.
+- Inside-the-Wall script: the power-up fallback step was missing from its start cue (fixed).
+

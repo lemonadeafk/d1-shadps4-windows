@@ -498,6 +498,9 @@ def session(args):
                 "D1_AH_SENSOR_AUTHORITY": "0:1:0",
                 # live experiment channel: tools\inject_sensor.py drops udt-5 frames here
                 "D1_AH_SENSOR_INJECT_DIR": str(Path(__file__).resolve().parent / "inject"),
+                # prepared answers to player-trigger incidents (tools\mission_director.py
+                # writes them; the host sends one the moment its trigger is first reported)
+                "D1_AH_INCIDENT_READY_DIR": str(Path(__file__).resolve().parent / "inject" / "trigger-ready"),
                 "D1_AH_SENSOR_KIND_VALUE": "2:0x80800868:" + str(
                     Path(__file__).resolve().parent / "capture" / "values" / "member_exists.bin"),
                 "D1_AH_SENSOR_REPEAT_S": "5",
