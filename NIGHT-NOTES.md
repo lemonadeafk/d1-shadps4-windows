@@ -2219,3 +2219,21 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
 - Still open: what releases t_*_frozen squads and what spawns squads without member records
   (leads: squad +0x2C/+0x30 alive counts and watchdog FUN_00103320; the member spawn path
   FUN_001BE9B0 -> FUN_001BDFB0 and its other callers).
+
+## 93. SQUADS WITHOUT MEMBER RECORDS SPAWN FROM THEIR ALIVE COUNTS (2026-10-13 20:20, run HANGAR1)
+- Highway world, start bubble 13 (the hangar, PRV104.1; D1_AH_SENSOR_WORLD=0x80cb800d:13), default
+  Hunter, launched by the user through the Director (Tower -> Launch). The player did NOT spawn in
+  that bubble (black screen, unit handle 0: the hangar is a per-phase bubble; phase 00 has no
+  player spawn there) - the test does not need the player.
+- The hangar's eight squads (062dd95d subs 5-12: sq_m0_fallen_init/_b/gating,
+  sq_ch1_fallen_on_playership_1-3, sq_m0_fallen_1/2) have NO kind-2 member records. Squad value
+  (0x8080071E, image = capture\values\default_kind1.bin) with +0x2C = n (member types) and
+  +0x30 i16[n] = alive count per type, sent to all eight: entity count 205 -> 246 (1 x 1) -> 323
+  (1 x 3) -> 337 (2 x 2) -> 339 (4 x 1); object census before {1:38, 2:22, 3:7, 8:4, 12:1, 14:13,
+  24:636} - NO bipeds, NO weapons; after {1:35, 2:22, 3:2, 8:4, 9:31, 11:51, 14:32, 24:635} =
+  31 BIPEDS + 51 WEAPONS. The client creates a squad's actors from its composition definition when
+  the server's alive count asks for them (tools: scratchpad alive_test.py).
+- Next: per squad, the right number of types/counts from its composition definition (0x80CC3833 for
+  sq_ch1_fallen_on_playership_1 etc.), a compiler step ("squad", group, sub, counts), the hangar
+  and graveyard fights in A Guardian Rises and the upper waves in Restoration; and starting the
+  hangar test in the right phase so the player spawns.
