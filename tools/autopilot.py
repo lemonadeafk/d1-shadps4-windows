@@ -88,8 +88,8 @@ DESTINATIONS = {
     # mission brings them in.
     # Restoration (activity 165): world act_cosmo_m1_dome_a, starting in bubble 8 (PRV64.64, inside
     # Hive dome A: the mission's squads, obj_hive_dome_a01, objective o1b). The real start (o1a) is
-    # the public Steppes, bubble 0, which stalls the load (no public sessions yet). Every squad and
-    # scripted object is served present, nothing scripted yet. NIGHT-NOTES section 86.
+    # the public Steppes, bubble 0, which stalls the load (no public sessions yet). The host plays
+    # tools\mission_restoration.py (compiled to inject\mission-restoration). NIGHT-NOTES 86-88.
     "restoration": dict(
         args=["--inworld", "--world", "act_cosmo_m1_dome_a", "--checksum", "0x42fe77a5",
               "--bubbles", "22", "--chosen", "0-21"],

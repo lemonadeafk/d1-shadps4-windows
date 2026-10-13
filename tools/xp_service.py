@@ -119,6 +119,8 @@ def newest_run():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--wait-new", action="store_true",
+                    help="follow the run started after this (a launcher starts the service first)")
     a = ap.parse_args()
     cur = ng.current()
     if not cur:
@@ -126,6 +128,11 @@ def main():
     name, _, meta = cur
     xp = meta.get("xp", 0)
     run = newest_run()
+    if a.wait_new:
+        started = time.time()
+        while not run or os.path.getctime(run) < started - 5:
+            time.sleep(2)
+            run = newest_run()
     log = os.path.join(run, "activity-host.log")
     print(time.strftime("%H:%M:%S"), "XP service: %s at %d XP (level %d), following %s" % (name, xp, level_of(xp), run), flush=True)
     # read from the start once for the activity the host publishes, then only new lines
