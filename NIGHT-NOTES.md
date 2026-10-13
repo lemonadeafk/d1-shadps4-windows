@@ -2060,3 +2060,41 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   Start in 8 for now: RES3 loaded PRV64.64 into the world, armed, dark Hive interior, enemy arc on
   the radar, figures standing still by the red wall (likely the frozen thralls). The full route
   needs public regions to connect (section 32's PAH protocol), the same blocker as Patrol.
+
+## 87. Restoration scripted and played; the ending (2026-10-13 15:00-16:20, runs RES4/RES5/RESPLAY/RESEND)
+- tools\mission_compile.py takes a mission table (world, bubble, objective group, script, skip,
+  re-arm cue); tools\mission_restoration.py is Restoration's script. Launch: autopilot
+  destination "restoration" (bubble 8, D1_AH_SENSOR_KIND_SKIP=2@8, D1_AH_MISSION=inject\
+  mission-restoration\mission.txt).
+- Objective texts (Nav Mode): o1a "HEAD TO SKYWATCH - Push into the old array domes and find
+  what the Fallen are protecting"; o1b "UNLOCK THE GATE - Deploy Ghost to unseal the gate to the
+  Lunar Complex"; o2 "Kill the Hive Wizard" (user). o1a's trigger (ff4a0c1a:29:13) is at the
+  complex's entrance steps (~ -548,-601). The world's phases: phase00, phase01, phase_end.
+- The gate dg_cosmo_dome_a_door01 (41d61614:4:0) opens on state channel 2 = 1 (animated). The
+  Hive behind it is real AI (thralls "Hidden Swarm" killed the player).
+- DEATH REPORT: a squad member's last udt-6 report starts with bits 1000000010100000110 (4/4
+  thralls in RES4, nothing else). Engine cue `<ref>:bits=<prefix>`; compiler cue ("dead").
+  Verified live: the user killed the wizard (41d61614:2:44) and the cue fired at once.
+- User run RESPLAY: every trigger fired in order (scare02, intro01, intro02(+force), unfreeze,
+  upper_spawn01, o3_s016, o1c). Wrong/missing: the basement acolytes (troopers 26-28) stood in a
+  doorway - the content holds them with obj_hive_dome_a01 placements t_troopers_frozen /
+  t_thrall_frozen, release mechanism unknown; 41d61614:4:46 (name cut, "ome_") never opened;
+  squads without member records (upper front/rush/back, t2 knight) never appear; the wizard's
+  death must COMPLETE o2 and end the mission (it only played lines).
+- o1b has no trigger, only obj_placement_m1_o1b._object_filter (kind 33): most likely the Ghost
+  scans the gate automatically when the player is near (no button) - to be confirmed from the
+  filter's value. Now: the gate opens 8 s after o1a's trigger.
+- Searching for the player: entity table B+0x26795E0 (stride 0xF0, pos +0xE0, yaw quaternion
+  z,w at +0xB8): the player was entry 1 at the start, but the table reorders when actors spawn.
+  Keyboard: space = TOUCHPAD (Nav Mode), n = jump, x = sprint, v = square, o = fire.
+- THE ENDING, so far: lifetime phase 6 shows "MISSION END: Seconds remaining: N" and nothing
+  else happens (2 min at 0). The number is lifetime_timer (4786c0e0 kind 17 sub 2, value
+  0x80800725, 36 B = the live struct at rec+0x1AC, setter 0x11EFA0): +0 u8 running, +4 i32 min,
+  +8 max, +0xC base, +0x10 ?, +0x14 i32 start tick, +0x18 f32 rate/tick; running value =
+  clamp(base + round((now-start)*rate), min, max); 15 units = 1 s (300 showed 20).
+- It does not count down: `now` is the activity clock, set from the 32-bit STAMP every udt-5
+  frame carries (decoder 0x2A1E94 -> FUN_002A2910); our encoder sends stamp 0. The clock only
+  advances between stamps when FUN_002411B0 says network time is available (global
+  [0x273DCD0]: +0x2B48 set and +0x00 == 0 -> +0x01), else +0x50 = -1 and the clock is frozen.
+  Leads for the real end: activity_complete_incident_* (an incident with investment metadata),
+  c_post_game_data_component / s_post_game_reward (rewards screen), return_fireteam_to_orbit.

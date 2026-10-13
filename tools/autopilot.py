@@ -97,7 +97,11 @@ DESTINATIONS = {
              "D1_AH_SENSOR_PLAYER_TEAM=-1",
              "D1_AH_SENSOR_KIND_VALUE=2:0x80800868:" + os.path.join(ROOT, "capture", "values", "member_exists.bin")
              + ",4:0x808007d9:" + os.path.join(ROOT, "capture", "values", "object_exists.bin"),
-             "D1_AH_SENSOR_KIND_RESEQ=4", "D1_AH_SENSOR_FOLLOW_MAX=3", "D1_AH_SENSOR_REPEAT_MAX=3"],
+             "D1_AH_SENSOR_KIND_RESEQ=4", "D1_AH_SENSOR_FOLLOW_MAX=3", "D1_AH_SENSOR_REPEAT_MAX=3",
+             # the dome's Hive arrives when the script brings it (tools\mission_restoration.py,
+             # compiled by tools\mission_compile.py --script restoration, played by the host)
+             "D1_AH_SENSOR_KIND_SKIP=2@8",
+             "D1_AH_MISSION=" + os.path.join(ROOT, "inject", "mission-restoration", "mission.txt")],
         launch="launch_patrol.py"),
     "guardian_rises_mission": dict(
         args=["--inworld", "--world", "act_cosmo_m0_highway", "--checksum", "0x8fe07299",
