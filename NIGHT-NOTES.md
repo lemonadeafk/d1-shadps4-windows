@@ -2040,3 +2040,23 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   triggers; no squad members. Objective 0 served with state 1 (inject_sensor, world 0x80cb804b)
   -> "NEW MISSION - RESTORATION" banner. Whether bubble 3 is the real mission start is not yet
   known (dark interior with railings, stars visible).
+- (14:45-15:00, run RES3) Record names for all 22 bubbles (world_sensors with D1_WS_DUMP):
+  capture\values\record_names_restoration.json ("group:kind:sub" -> name, bubbles).
+  - ff4a0c1a (every bubble): the mission. Phase 00 objectives obj_m1_o1a/o1b/o1c (kind 32 subs
+    0/3/6, incoming/completion sequences kind 5 subs 1,2 / 4,5 / 7,8, player triggers kind 29
+    13 = o1a, 14 = o1c), phase 01 obj_m1_o2 (kind 32 sub 9, sequences 10/11), pm_dome_a (28:12).
+  - 8bd80dbe (every bubble): the Ghost's lines, seq_d_o1_* .. seq_d_o3_*, seq_m_intro/outro/cue1,
+    trigger pt_d_o3_s016_start.
+  - 41d61614 (bubble 8 only = PRV64.64, private): the Hive of dome A. obj_hive_dome_a01 (3:1),
+    squads (kind 1) sq_hive_scare01/02a-d, basement thrall/troopers/knight, upper front/rush/back,
+    upper_wizard01; members (kind 2) 8,10,12,14,16 scare thralls, 18-24 basement thralls,
+    26-28 troopers, 44 the wizard; door dg_cosmo_dome_a_door01 (4:0), seq_hive_wave_announce
+    (5:45), triggers 47-55,57 (pt_spawn_hive_intro01/02, pt_thrall_unfreeze, pt_upper_*), regions
+    56/58, obj_placement_m1_o1b._object_filter (33:59), placement tags 36:2-6 (t_thrall_frozen ...).
+  - Everything else is Patrol: amb_* ambient squads, public events (dropship, countdown, taken
+    invasion, boss), chests, thorium routes. Bubble 6 holds dome A's outside (thorium_dome_a,
+    cave_entrance_domea); bubble 0 = Steppes. Trigger records carry no coordinates (shape tags).
+- So the mission walks Steppes (public 0) -> outside dome A (public 6) -> the dome (private 8).
+  Start in 8 for now: RES3 loaded PRV64.64 into the world, armed, dark Hive interior, enemy arc on
+  the radar, figures standing still by the red wall (likely the frozen thralls). The full route
+  needs public regions to connect (section 31's PAH protocol), the same blocker as Patrol.

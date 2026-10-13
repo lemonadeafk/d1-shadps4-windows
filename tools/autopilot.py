@@ -86,13 +86,14 @@ DESTINATIONS = {
     # The mission as it is meant to be played: start on the highway with the Ghost and the scripted
     # objects; the Wall (bubble 3) stays without squads until tools\mission_director.py --script
     # mission brings them in.
-    # Restoration (activity 165): world act_cosmo_m1_dome_a, starting in bubble 3 (PRV24.24; bubble
-    # 0 is PUBLIC in this world and stalls the load). First look: every squad and scripted object of
-    # the start area is served present, nothing scripted yet. NIGHT-NOTES section 86.
+    # Restoration (activity 165): world act_cosmo_m1_dome_a, starting in bubble 8 (PRV64.64, inside
+    # Hive dome A: the mission's squads, obj_hive_dome_a01, objective o1b). The real start (o1a) is
+    # the public Steppes, bubble 0, which stalls the load (no public sessions yet). Every squad and
+    # scripted object is served present, nothing scripted yet. NIGHT-NOTES section 86.
     "restoration": dict(
         args=["--inworld", "--world", "act_cosmo_m1_dome_a", "--checksum", "0x42fe77a5",
               "--bubbles", "22", "--chosen", "0-21"],
-        env=["D1_AH_SENSOR_WORLD=0x80cb804b:3", "D1_AH_ACTIVITY_INDEX=165",
+        env=["D1_AH_SENSOR_WORLD=0x80cb804b:8", "D1_AH_ACTIVITY_INDEX=165",
              "D1_AH_SENSOR_PLAYER_TEAM=-1",
              "D1_AH_SENSOR_KIND_VALUE=2:0x80800868:" + os.path.join(ROOT, "capture", "values", "member_exists.bin")
              + ",4:0x808007d9:" + os.path.join(ROOT, "capture", "values", "object_exists.bin"),
