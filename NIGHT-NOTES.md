@@ -1720,3 +1720,36 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   21:25:15 TRIGGER fc0e45a3:29:106 pt_fallen_vandal_spawn at (441.4, -702.9, 11.0)
   21:25:20 TRIGGER fc0e45a3:29:107 pt_fallen_3_spawn at (426.6, -697.9, 9.8)
   21:25:39 TRIGGER fc0e45a3:29:119 pt_exit at (411.1, -685.6, 8.2)
+
+## 76. The mission script is event-driven; the area-switch race fixed (2026-10-12 21:30-21:50, runs EV1-EV2)
+- RACE FIX (d1-activity-host state.rs): an injected udt-5 frame counted towards the current
+  burst (`sensors_sent - sensor_burst_base`), which is both the follow-up cap and the odd/even
+  choice of the alternate frame (the one that creates the area's scripted objects). Injected
+  frames now advance `sensor_burst_base` as well. EV2: the Wall's objects were reported on
+  their own with four cues firing in the 70 s before the switch. The script also has a safety
+  net: 12 s in region 24 without the kind-4 report -> it sends the objects itself.
+- EVENT SCRIPTS (tools\mission_director.py, EVENT_SCRIPTS; `--linear` = the old timed list):
+  a table of (cue, steps); a cue is a record the game reports (player trigger 29, pm_ region
+  28, object 4) and its steps start in their own thread the first time it is reported. A cue
+  with "changed" fires when the record is reported with a value different from its first one;
+  a "fire" step starts another cue as a fallback. Replaying the user's log (section 75)
+  through the table: 21 of 21 cues fire, in the walked order.
+- Cue map: pm_in_wall -> o1_20; obj_m0_phase00_m1 -> objectives; pt_in_wall_2 -> o1_20b;
+  pt_fallen_above -> seq_fallen_above; breach_group (+16 s) -> Ghost, o2_10;
+  pt_nux_first_fallen_wall_climb (crossed in the CORRIDOR near 356,-796 - section 75 shows it
+  late only because of the late re-arm) -> scream, o2_20; pt_nux_ghost_light_up_start
+  (392,-785, before the gate; fallback 40 s after the previous cue) -> Ghost flight, power-up,
+  gate, about 17 s in all (was 75 s); obj_investigate_wall -> GRAB THE RIFLE; obj_get_weapon ->
+  rifle gone + Khvostov 1.5 s after the player is there (was up to 18 s late); pt_fallen_*
+  -> the named squads of that place instead of every squad at once; chest value changed ->
+  loadout "khvostov_sniper" (Calcutta-LR2, ci 3606 - a PLACEHOLDER, the real reward is not
+  known); pt_exit -> o_breach_doors_exit removed.
+- Squads without member records in this bubble's table (cannot be spawned by name):
+  sq_fallen_first_vandal, _h, _bridge, _sniper, _garage_exit.
+- LIVE (EV2, test walker): start, pm_in_wall, obj_m0_phase00_m1, pt_in_wall_2,
+  pt_fallen_above, breach_group and pt_nux_first_fallen_wall_climb cues all fired at the
+  walker's position; power-up and gate ran. NOT run live yet: the 120 cue as now placed, the
+  rifle, the Fallen groups, the chest, the exit - the walker kept snagging on scenery
+  (stairs' edge at 331,-820; corridor at 356,-795 and 376,-790).
+- Seen in EV2: the Ghost stays in the open hand inside the Wall too (the user's PLAY1 report
+  that it left the hand at the switch is not reproduced).

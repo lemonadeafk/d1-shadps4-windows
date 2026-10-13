@@ -135,6 +135,133 @@ SCRIPTS = {
         (16, "objective", 7, ACTIVE, "objective: FIND A WEAPON (again, after the area switch)"),
     ] + _WALL,
 }
+def _squads(*names):
+    """Member (kind 2) subs of the named Wall squads, from the record names in the content."""
+    import json
+    rec = json.load(open(os.path.join(os.path.dirname(HERE), "capture", "values", "record_names_b3.json")))
+    return [int(k.split(":")[2]) for k, v in rec.items()
+            if k.startswith(BREACH[2:] + ":2:") and any(v.startswith(n + "__") for n in names)]
+
+
+def _pt(sub):           # a Wall player trigger
+    return (BREACH, 29, sub)
+
+
+def _dt(sub):           # a dialogue-group player trigger
+    return (DIALOGUE, 29, sub)
+
+
+# EVENT SCRIPTS: (cue, steps). "start" runs when the script starts; every other cue is a record
+# the GAME reports - a player trigger firing (kind 29, armed by the trigger logger), a pm_
+# region (28), an object appearing (4) - and its steps run the moment it is first reported.
+# Cue positions are from the user's playthrough (NIGHT-NOTES section 75). What each cue should
+# set off is read from the record names; the Ghost lines whose words are not known are placed
+# by guess (section 76).
+_OPENING = [
+    ("start", [
+        (0, "objective", 3, ANNOUNCE, "NEW MISSION - A Guardian Rises"),
+        (7, "objective", 3, ACTIVE, "objective: ENTER THE WALL"),
+        _line(2, 3, "o1_10"),
+        _line(7, 4, "o1_15"),
+    ]),
+    ((ACTIVITY, 28, 33), [_line(0, 5, "o1_20")]),                         # pm_in_wall: the stairs (329,-821)
+    ((ACTIVITY, 29, 30), [                                                # obj_m0_phase00_m1 trigger (317,-820)
+        (0, "objective", 3, HIDDEN, "ENTER THE WALL done"),
+        (1, "objective", 7, ACTIVE, "objective: FIND A WEAPON"),
+    ]),
+    (_dt(46), [_line(0, 6, "o1_20b")]),                                   # pt_in_wall_2 (326,-797)
+    (_dt(47), [(0, "seq", DIALOGUE, 36, "seq_fallen_above")]),            # pt_fallen_above (332,-797)
+]
+_ROOM = [
+    # the Wall's own area: the host's frames for it (3 x 5 s) put every value back to its
+    # default, so wait them out; then the Ghost is there
+    ((BREACH, 4, 0), [
+        (16, "objective", 7, ACTIVE, "objective: FIND A WEAPON (after the area switch)"),
+        (0, "spawn", BREACH, "the Ghost appears", [95]),
+        _line(1, 9, "o2_10"),
+    ]),
+    # pt_nux_first_fallen_wall_climb: crossed in the corridor, around (356,-796) (run EV2; the
+    # user's log shows it later only because it was re-armed late).
+    (_pt(122), [
+        (0, "seq", DIALOGUE, 33, "seq_fallen_scream_far"),      # (the nest squads would attack an unarmed player)
+        _line(2, 10, "o2_20"),
+        (40, "fire", _pt(120), "the power-up without its trigger (not crossed in 40 s)"),
+    ]),
+    # pt_nux_ghost_light_up_start (392,-785): in the dark room, before the gate. The power-up
+    # is the Ghost's doing, so it runs from here on short gaps (was 75 s of standing around).
+    (_pt(120), [
+        (0, "perf", BREACH, 125, "ghost_perf.bin", "the Ghost flies to the power control with its torch"),
+        _line(1, 11, "o2_30"),
+        _line(4, 12, "o2_35"),
+        (3, "state", BREACH, "0", (0.0, 0.0, 0.25), "power 25%"),
+        (0.7, "state", BREACH, "0", (0.0, 0.0, 0.5), "power 50%"),
+        (0.7, "state", BREACH, "0", (0.0, 0.0, 0.75), "power 75%"),
+        (0.7, "state", BREACH, "0,1,4,8", (0.0, 0.0, 1.0), "power on"),
+        (0.5, "seq", DIALOGUE, 0, "seq_m_cue1"),
+        _line(0.5, 13, "o2_36"),
+        (3, "gone", BREACH, "5,6", "the gate to the rifle opens"),
+        _line(1, 14, "o2_40"),
+    ]),
+    ((ACTIVITY, 29, 37), [_line(0, 15, "o2_50")]),                        # pf_104a_pwr trigger (407,-788)
+    ((ACTIVITY, 29, 34), [                                                # obj_investigate_wall trigger (410,-793)
+        (0, "objective", 7, HIDDEN, "FIND A WEAPON done"),
+        (0.5, "objective", 11, ACTIVE, "objective: GRAB THE RIFLE"),
+        _line(0.5, 16, "o2_60"),
+    ]),
+    ((ACTIVITY, 29, 35), [                                                # obj_get_weapon trigger: AT the rifle
+        (1.5, "gone", ACTIVITY, "6", "the rifle is taken"),
+        (0, "loadout", "khvostov", "the Khvostov is handed over"),
+        (0.5, "objective", 11, HIDDEN, "GRAB THE RIFLE done"),
+        _line(0, 19, "o2_90"),                                            # "I hope you know how to use that thing"
+        (4, "objective", 14, ACTIVE, "objective: FIGHT THROUGH THE WALL"),
+        (1, "seq", BREACH, 96, "seq_fallen_intro_vandal_drop"),
+        # (sq_fallen_first_vandal, _h, _bridge, _sniper and _garage_exit have no member records here)
+        (0, "spawn", BREACH, "the first Fallen", "sq_fallen_bouncedown_a"),
+        _line(3, 17, "o2_70"),
+    ]),
+    (_pt(108), [                                                          # pt_fallen_1b_spawn (417,-814)
+        (0, "seq", BREACH, 97, "seq_breach_fallen_grate_intro"),
+        (0, "spawn", BREACH, "Fallen, first group", "sq_fallen_wall_l_a,sq_fallen_floor_a"),
+        _line(2, 18, "o2_80"),
+    ]),
+    (_dt(48), [(0, "seq", DIALOGUE, 38, "seq_fallen_around_corner")]),   # pt_fallen_around_corner (423,-814)
+    (_pt(109), [(0, "spawn", BREACH, "Fallen, group b", "sq_fallen_floor_b,sq_fallen_wall_r_b,sq_fallen_wall_l_b")]),
+    (_pt(110), [                                                          # pt_fallen_c_spawn (464,-806)
+        (0, "seq", BREACH, 98, "seq_fallen_vault_left"),
+        (0, "spawn", BREACH, "Fallen, group c",
+         "sq_fallen_bouncedown_c,sq_fallen_dropdown_c,sq_fallen_wall_l_c,sq_fallen_floor_c"),
+    ]),
+    (_dt(58), [_line(0, 20, "o2_95")]),                                   # pt_fallen_melee_nux (488,-791)
+    (_pt(112), [                                                          # pt_fallen_arena_spawn (521,-818)
+        (0, "seq", BREACH, 100, "seq_breach_fallen_drop"),
+        (0, "spawn", BREACH, "Fallen, the arena",
+         "sq_fallen_dropdown_e,sq_fallen_dropdown_f,sq_fallen_floor_f,sq_fallen_wall_r_f,sq_fallen_dropdown_g,"
+         "sq_fallen_wall_l_g,sq_fallen_nest1"),
+    ]),
+        (_pt(114), [                                                          # pt_corr_spawn_b (527,-721)
+        (0, "seq", DIALOGUE, 40, "seq_ambush_hallway"),
+        (0, "spawn", BREACH, "Fallen in the corridor", "sq_fallen_1c,sq_fallen_2"),
+    ]),
+    (_pt(117), [                                                          # pt_garage_fallback (464,-713)
+        (0, "seq", DIALOGUE, 41, "seq_ambush_garage"),
+        (0, "spawn", BREACH, "Fallen in the garage", "sq_fallen_garage_obj,sq_fallen_garage_melee"),
+    ]),
+    (_pt(106), [(0, "spawn", BREACH, "the garage Vandals", "sq_fallen_garage_vandals_2,sq_fallen_garage_vandals_3")]),
+    (_pt(107), [(0, "spawn", BREACH, "Fallen at the exit", "sq_fallen_nest2")]),
+    # o_chest_primary_weapon: the game reports the object again with a changed value when the
+    # player opens it (user's run, 21:24:23). What it should give is NOT known - the user
+    # remembers a shotgun or a sniper rifle; Calcutta-LR2 (3606) is the starter sniper next to
+    # the Khvostov in the item table, Preacher Mk. 20 (3605) the shotgun. A placeholder.
+    ((BREACH, 4, 7, "changed"), [(0.5, "loadout", "khvostov_sniper", "the chest's weapon (Calcutta-LR2) is handed over")]),
+    (_pt(119), [(0, "gone", BREACH, "2", "the exit doors open")]),      # pt_exit (411,-686): o_breach_doors_exit
+]
+EVENT_SCRIPTS = {
+    "mission": _OPENING + _ROOM,
+    # started inside the Wall: the room's own cue has already been reported, so open it up at once
+    "wall": [("start", [(0, "objective", 7, ACTIVE, "objective: FIND A WEAPON"),
+                        (0, "spawn", BREACH, "the Ghost appears", [95]),
+                        _line(1, 9, "o2_10")])] + _ROOM[1:],
+}
 SETTLE = {"wall": 18, "mission": 18}     # seconds after in_world before the first step
 
 
@@ -268,6 +395,7 @@ def main():
     ap.add_argument("--script", default="wall", choices=sorted(SCRIPTS))
     ap.add_argument("--counter", type=int, default=1)
     ap.add_argument("--no-wait", action="store_true")
+    ap.add_argument("--linear", action="store_true", help="the old timed script instead of the event script")
     ap.add_argument("--no-trigger-log", action="store_true", help="do not arm and log the game's player triggers")
     a = ap.parse_args()
     run = newest_run()
@@ -285,17 +413,22 @@ def main():
     os.environ["D1_ORACLE_EXTRA_TAGS"] = "%#x,%#x" % (object_state.STATE_TAG, OBJECTIVE_TAG)
     objective = open(os.path.join(os.path.dirname(HERE), "capture", "values", "objective_default.bin"), "rb").read()
     seq = 100                       # scripted-object sequence numbers only ever rise
+    import threading
+    run_dir = run
     if not a.no_trigger_log:
-        import threading
         threading.Thread(target=trigger_logger, args=(run, a.bubble), daemon=True).start()
-    for step in SCRIPTS[a.script]:
+    lock = threading.Lock()
+    fire = None                     # set by the event engine below
+
+    def play(step):
+        nonlocal seq, armed_at
         delay, kind = step[0], step[1]
         time.sleep(delay)
         if kind == "wait":
             _, _, group, wkind, sub, timeout, name = step
             hit = watcher.wait(int(group, 16), wkind, sub, timeout)
             print(time.strftime("%H:%M:%S"), name, "reported by the game" if hit else "not reported in %d s - going on" % timeout, flush=True)
-            continue
+            return
         if kind == "wait_any":
             _, _, cues, name = step
             want = {(int(g, 16), k, s) for g, k, s in cues}
@@ -306,12 +439,17 @@ def main():
                     watcher.poll()
                     time.sleep(0.5)
             print(time.strftime("%H:%M:%S"), name, "- reported by the game (%08x %d:%d)" % hit[1:4], flush=True)
-            continue
+            return
+        if kind == "fire":                  # event scripts: start another cue's steps if it has not started
+            _, _, cue, name = step
+            if fire((int(cue[0], 16), cue[1], cue[2])):
+                print(time.strftime("%H:%M:%S"), name, flush=True)
+            return
         if kind == "incident":
             _, _, timeout, name = step
             hit = watcher.wait(int(ACTIVITY, 16), 29, 35, timeout)     # obj_get_weapon's trigger
             print(time.strftime("%H:%M:%S"), name, "reported by the game" if hit else "not reported in %d s - going on" % timeout, flush=True)
-            continue
+            return
         if kind == "loadout":
             # picked up by d1-responder (D1_SWAP_TRIGGER) on the game's next keepalive
             _, _, variant, name = step
@@ -322,7 +460,7 @@ def main():
             with open(SWAP_TRIGGER, "w") as f:
                 f.write(loadout_variant.swap_lines(variant))
             print(time.strftime("%H:%M:%S"), name, "requested", flush=True)
-            continue
+            return
         if kind == "trigger":
             # kind-29 value (schema 0x80800463): {bool enabled, i32 limit}
             _, _, sub, on, name = step
@@ -343,6 +481,11 @@ def main():
             group, name = step[2], step[3]
             only = step[4] if len(step) > 4 else None
             img = open(os.path.join(os.path.dirname(HERE), "capture", "values", "member_exists.bin"), "rb").read().hex()
+            if isinstance(only, str):
+                only = _squads(*only.split(","))
+                if not only:                    # an empty list would mean "every member"
+                    print(time.strftime("%H:%M:%S"), name, "- no member records for these squads, skipped", flush=True)
+                    return
             entries = ["%s:%d:%s" % (group, sub, img) for sub in (only or member_subs(a.bubble, group))]
         else:
             seq += 1
@@ -353,8 +496,59 @@ def main():
                 _, _, group, subs, name = step
                 img = object_state.image(seq, (0.0, 0.0, 0.0), exists=False).hex()
             entries = ["%s:%s:%s" % (group, sub, img) for sub in subs.split(",")]
-        ok = inject_sensor.inject(a.bubble, entries, world=WORLD)
+        with lock:
+            ok = inject_sensor.inject(a.bubble, entries, world=WORLD)
         print(time.strftime("%H:%M:%S"), name, "sent" if ok else "NOT picked up", flush=True)
+
+
+    if not a.linear and a.script in EVENT_SCRIPTS:
+        # Event script: each cue's steps start the moment the game first reports that record.
+        table = [(c if c == "start" else (int(c[0], 16),) + tuple(c[1:]), steps) for c, steps in EVENT_SCRIPTS[a.script]]
+        first = {}                  # record -> its first reported value, for the "changed" cues
+        fired = set()
+
+        def run_cue(steps):
+            for step in steps:
+                play(step)
+
+        def fire(cue):
+            started = False
+            for c, steps in table:
+                if c == cue and c not in fired:
+                    fired.add(c)
+                    label = "start" if cue == "start" else "%08x %d:%d" % cue[:3] + " changed" * (len(cue) > 3)
+                    print(time.strftime("%H:%M:%S"), "CUE", label, flush=True)
+                    threading.Thread(target=run_cue, args=(steps,), daemon=True).start()
+                    started = True
+            return started
+
+        fire("start")
+        in_wall_at, room, looked = None, (int(BREACH, 16), 4, 0), 0
+        while newest_run() == run_dir and os.path.isdir(run_dir):
+            # Safety net (run PLAY1): if the game has switched to the Wall's area but its
+            # scripted objects have not appeared after 12 s, send them with a new sequence number.
+            if room in [c for c, _ in table] and room not in fired:
+                if in_wall_at is None and time.time() - looked > 2:
+                    looked = time.time()
+                    try:
+                        with open(os.path.join(run_dir, "activity-host.log"), "rb") as f:
+                            if b"the client is now in region 24" in f.read():
+                                in_wall_at = time.time()
+                    except OSError:
+                        pass
+                elif in_wall_at is not None and time.time() - in_wall_at > 12:
+                    in_wall_at = time.time() + 3600
+                    print(time.strftime("%H:%M:%S"), "the Wall's objects did not appear - sending them again", flush=True)
+                    play((0, "state", BREACH, ",".join(str(n) for n in range(20)), (0.0, 0.0, 0.0), "the Wall's objects"))
+                    play((0, "state", ACTIVITY, "0,6", (0.0, 0.0, 0.0), "the mission's objects"))
+            for r in watcher.poll():
+                fire(r[1:4])
+                if first.setdefault(r[1:4], r[4]) != r[4]:
+                    fire(r[1:4] + ("changed",))
+            time.sleep(0.2)
+        return
+    for step in SCRIPTS[a.script]:
+        play(step)
     if not a.no_trigger_log:        # keep logging triggers for as long as this run is the current one
         print(time.strftime("%H:%M:%S"), "script done; still logging triggers to trigger-log.txt", flush=True)
         while newest_run() == run and os.path.isdir(run):
