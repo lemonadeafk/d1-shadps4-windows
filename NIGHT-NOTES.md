@@ -1825,3 +1825,9 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
 - Open: inside the Wall a red light shows wide repeated streak bands across the screen
   (vis-wall-c) - lens streak or a wrap-mode problem, not looked at yet.
 
+- (23:00, runs RD4, VIS1, VIS2) The red bands in the Wall are the game's own lens-flare art:
+  draw 23510 of the frame is a mirrored pair of quads textured with a 512x128 streak texture
+  that has exactly those bands, 2.04 x 0.96 NDC per half (the other flares of the frame are
+  0.18 x 0.63 and 0.53 x 0.24). The size comes from the game's vertices; whether it is larger
+  than on a console is not known. Highway and character screen checked with the new build:
+  no crash, Guardian lit, the sun's flare ghosts on the far side of the screen as expected.
