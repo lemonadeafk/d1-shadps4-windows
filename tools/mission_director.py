@@ -198,10 +198,12 @@ _ROOM = [
         (1, "state", BREACH, "0", (0.0, 0.0, 0.25), "power 25%"),
         (0.5, "state", BREACH, "0", (0.0, 0.0, 0.5), "power 50%"),
         (0.5, "state", BREACH, "0", (0.0, 0.0, 0.75), "power 75%"),
-        (0.5, "state", BREACH, "0,1,4,8", (0.0, 0.0, 1.0), "power on"),
+        (0.5, "state", BREACH, "0,1,8", (0.0, 0.0, 1.0), "power on"),
         (0.3, "seq", DIALOGUE, 0, "seq_m_cue1"),
         _line(0.3, 13, "o2_36"),
-        (0, "gone", BREACH, "5,6", "the gate (served open already)"),
+        # m0_power_up (sub 4, at 410,-789) is the gate in front of the rifle: in the real
+        # mission it lifts only partway, enough to crouch under (the user). Channel 2 = lift.
+        (2, "state", BREACH, "4", (0.0, 0.0, 0.35), "the gate before the rifle lifts partway"),
         _line(3, 12, "o2_35"),
         _line(6, 14, "o2_40"),
     ]),

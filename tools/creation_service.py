@@ -75,7 +75,10 @@ def main():
             import loadout_variant
             lines = new_guardian.env_lines("created")
             try:
-                unarmed = loadout_variant.build("unarmed", {"primary": None, "special": None, "heavy": None})
+                # D1_START_SLOTS=empty: no weapon equipped at all (as a new Guardian really is);
+                # default "dead": the weapons exist but do nothing (open hand + Ghost)
+                start = "empty" if os.environ.get("D1_START_SLOTS") == "empty" else None
+                unarmed = loadout_variant.build("unarmed", {"primary": start, "special": start, "heavy": start})
                 loadout_variant.build("khvostov", {"primary": loadout_variant.KHVOSTOV, "special": None, "heavy": None})
                 loadout_variant.build("khvostov_sniper", {"primary": loadout_variant.KHVOSTOV, "special": 3606, "heavy": None})
                 lines += "D1_ROSTER_DIR=%s\nD1_CHARACTER_FILE=%s\n" % (os.path.join(unarmed, "roster"),

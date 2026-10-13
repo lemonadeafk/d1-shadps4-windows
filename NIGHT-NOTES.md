@@ -1936,3 +1936,35 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   {1: 0, 0: 0}; their talent grid (helm Prime Zealot = grid 154, also at element +0x50) has
   nodes whose 0x808045F1 lists name stat steps (node 2: 15, 16, 17, 18). The table those
   steps index is not found yet. Not served: no invented values.
+
+## 83. The Wall's gates and the gray box; real pickups; the creation path (2026-10-13 morning, runs PLAY3-5, NEW1, GATE1-9)
+- Scripted objects of the Wall (record -> sub -> position): sub 1 o_breach_doors_lights (411.6,
+  -816.7) = a roller door; sub 4 m0_power_up (410.1,-788.7) = the GATE IN FRONT OF THE RIFLE;
+  subs 5 / 6 o_breach_gating_back / nut_back (390.4,-793.1) = the gate from the corridor INTO
+  the dark room. State channel 2 of a gate = how far it is lifted (0 closed, 1 fully lifted);
+  0.35 leaves a crouch-height gap (the real mission: the gate before the rifle lifts just enough
+  to crouch under - the user).
+- THE GRAY BOX: o_breach_doors_lights with no state is a flat gray block in front of the rifle
+  gate. Served with channel 2 = 1 from the area's first frame it is open and the barred gate
+  shows (GATE9).
+- New in the activity host: D1_AH_SENSOR_SLOT_VALUE=<group>:<sub>:<tag>:<file>[,...] - one
+  record carries a value from the area's first frame on. Needs D1_ORACLE_EXTRA_TAGS=0x8080279a
+  for state entries (without it the frame cannot be encoded and the game never loads - GATE1).
+  Mission launch now serves: 5 / 6 lifted, 1 open, 4 closed, the Ghost (member 95) present.
+  The script lifts 4 to 0.35 after the power-up; the dark room starts at once (no 16 s wait).
+- Crash 0xBBDEDE also hit at the move to the Graveyard (PLAY3) and right after a loadout swap +
+  the first Fallen spawn (PLAY4): it follows lots of objects being made / removed, not area
+  switches alone. The host now does NOT repeat the entity-slot grant in state refreshes once the
+  client has freed indices (D1_AH_REFRESH_SLOTS=1 = old); PLAY5 then crossed both area changes
+  without a crash (one run).
+- Real weapon pickup: c_action_impl_weapon_pickup (FUN_00399360) needs a target object with the
+  component 0x80802292; in memory that sits on real weapon objects (gear defs 0x80aa2dxx,
+  0x80a7f1c2, each with 0x808006bf). The rifle on the crate (prefab 0x80cb828c) has none - it is
+  a display. No mission record in this world places a pickup weapon; the server can only switch
+  records the content defines. Spawning a loose Khvostov is not possible with what is known.
+- Creation path (NEW1): a brand-new Guardian with truly EMPTY weapon slots
+  (loadout_variant --unarmed --empty; creation_service D1_START_SLOTS=empty) still has the Ghost
+  in the open hand. So the hand+Ghost is the game's no-weapon state on every path.
+- Side effect to remember: a creation run writes capture-rig\guardians\current.txt and every
+  launcher then serves that level-1 Guardian (Director map differs, autopilot cannot launch);
+  deleted again afterwards.

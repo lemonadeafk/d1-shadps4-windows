@@ -65,6 +65,11 @@ def build(name, slots):
             if ci is None:
                 struct.pack_into("<H", b, e + 0x0A, 0)
                 continue
+            if ci == "empty":
+                # nothing equipped: the exact form of an unused slot in the served character
+                # (ordinals 17-19): SOID 0, content index 0xFFFF, the rest "unset"
+                b[e:e + 0x40] = bytes.fromhex("00000000000000" "00" "ffff0000" + "ff" * 16 + "ffff0000") + bytes(0x40 - 0x20)
+                continue
             pattern, art = fc.pattern_of(ci), art_of(ci)
             if pattern is None or art is None:
                 raise SystemExit("content index %d: no pattern / art in its definition" % ci)
@@ -93,11 +98,14 @@ def main():
     ap.add_argument("--special")
     ap.add_argument("--heavy")
     ap.add_argument("--unarmed", action="store_true")
+    ap.add_argument("--empty", action="store_true", help="with --unarmed: slots EMPTY instead of dead")
     a = ap.parse_args()
     slots = {}
     for slot in ORDINALS:
         v = getattr(a, slot)
-        if a.unarmed or v == "none":
+        if v == "empty" or (a.unarmed and a.empty):
+            slots[slot] = "empty"
+        elif a.unarmed or v == "none":
             slots[slot] = None
         elif v:
             slots[slot] = int(v, 0)
