@@ -1059,6 +1059,69 @@ index 891ceb8..0dfbb6f 100644
      /// The bubble count this instance publishes at `global_activity_state+0x10`.
      pub fn bubble_count(&self) -> u32 {
          self.bubble_count
+diff --git a/d1-server/crates/d1-bap/src/lib.rs b/d1-server/crates/d1-bap/src/lib.rs
+index 54853a5..b8c1186 100644
+--- a/d1-server/crates/d1-bap/src/lib.rs
++++ b/d1-server/crates/d1-bap/src/lib.rs
+@@ -2530,7 +2530,57 @@ fn pack_msb_first(mut bits: Vec<bool>) -> Vec<u8> {
+ /// `+0x68`. Before this, every account we sent left `+0x68` zero, so `0x585820` returned at its
+ /// first check and the gate could only ever return 3.
+ pub fn account_rsat(account_soid: u64, characters: &[u64], profile_soid: u64) -> Vec<u8> {
+-    account_rsat_with_serial(account_soid, characters, profile_soid, 0)
++    with_client_state(account_rsat_with_serial(account_soid, characters, profile_soid, 0))
++}
++
++/// The account object with the client's own block written back into it.
++///
++/// Investment **701** is the client uploading its account-level state: schema `0x80801716`,
++/// 1088 bytes, the very structure that sits at `+0x80` of the account object (`0x808018C7`).
++/// It holds, among other things, a 32-bit set of the announcements the player has dismissed
++/// (`+0x404` of the block - three "X OK" pop-ups in orbit set three bits, measured 2026-10-13).
++/// An account that always carries an empty block shows every announcement on every login.
++///
++/// `D1_CLIENT_STATE_DIR/701.bin` is the latest upload (the responder keeps it), and
++/// `D1_OBJECT_FILE` names d1-oracle's `object_file` example: both objects go through the
++/// client's own codec (decode account, decode the upload, copy 1088 bytes, encode). Without
++/// either variable, or on any failure, the account is returned unchanged.
++pub fn with_client_state(rsat: Vec<u8>) -> Vec<u8> {
++    const BLOCK_AT: usize = 0x80;
++    const BLOCK_SIZE: usize = 1088;
++    let (Ok(dir), Ok(exe)) = (std::env::var("D1_CLIENT_STATE_DIR"), std::env::var("D1_OBJECT_FILE")) else {
++        return rsat;
++    };
++    let Ok(upload) = std::fs::read(format!("{dir}/701.bin")) else { return rsat };
++    if upload.len() < 3 {
++        return rsat;
++    }
++    let tmp = std::env::temp_dir();
++    let path = |n: &str| tmp.join(format!("d1-acct-{}-{n}", std::process::id()));
++    let run = |args: &[&std::ffi::OsStr]| {
++        std::process::Command::new(&exe).args(args).output().map(|o| o.status.success()).unwrap_or(false)
++    };
++    let (acct_bin, acct_img, up_bin, up_img, out_bin) =
++        (path("a.bin"), path("a.img"), path("u.bin"), path("u.img"), path("o.bin"));
++    let patched = (|| {
++        std::fs::write(&acct_bin, &rsat).ok()?;
++        std::fs::write(&up_bin, &upload[2..]).ok()?; // after the u16 message id
++        run(&["decode".as_ref(), "0x808018c7".as_ref(), acct_bin.as_os_str(), acct_img.as_os_str()]).then_some(())?;
++        run(&["decode".as_ref(), "0x808016dd".as_ref(), up_bin.as_os_str(), up_img.as_os_str()]).then_some(())?;
++        let mut image = std::fs::read(&acct_img).ok()?;
++        let block = std::fs::read(&up_img).ok()?;
++        if block.len() != BLOCK_SIZE || image.len() < BLOCK_AT + BLOCK_SIZE {
++            return None;
++        }
++        image[BLOCK_AT..BLOCK_AT + BLOCK_SIZE].copy_from_slice(&block);
++        std::fs::write(&acct_img, &image).ok()?;
++        run(&["encode".as_ref(), "0x808018c7".as_ref(), acct_img.as_os_str(), out_bin.as_os_str()]).then_some(())?;
++        std::fs::read(&out_bin).ok().filter(|b| !b.is_empty())
++    })();
++    for f in [&acct_bin, &acct_img, &up_bin, &up_img, &out_bin] {
++        let _ = std::fs::remove_file(f);
++    }
++    patched.unwrap_or(rsat)
+ }
+ 
+ /// [`account_rsat`] with account schema field **[2]** - the 32-bit leaf at object `+0x60` - set to
 diff --git a/d1-server/crates/d1-oracle/examples/class_find.rs b/d1-server/crates/d1-oracle/examples/class_find.rs
 new file mode 100644
 index 0000000..c889617
@@ -2422,7 +2485,7 @@ index 0000000..00d53dd
 +    Ok(w)
 +}
 diff --git a/d1-server/crates/d1-responder/src/main.rs b/d1-server/crates/d1-responder/src/main.rs
-index 6a76336..6a0d7d8 100644
+index 6a76336..71ff291 100644
 --- a/d1-server/crates/d1-responder/src/main.rs
 +++ b/d1-server/crates/d1-responder/src/main.rs
 @@ -1211,6 +1211,34 @@ fn character_lifecycle_reply(id: u16, args: &[u8], wire_body: &[u8]) -> Option<V
@@ -2795,7 +2858,29 @@ index 6a76336..6a0d7d8 100644
                                                                          // ⛔ RE-SEND DISABLED, 2026-08-08 - it was my own regression.
                                                                          // It was added to beat the state-1 race, but the answer is
                                                                          // a BASELINE (flags 0x01) and a second baseline on a family
-@@ -3438,6 +3714,41 @@ async fn main() -> Result<()> {
+@@ -3306,6 +3582,21 @@ async fn main() -> Result<()> {
+                                                                     } else { 0 };
+                                                                     warn!("      INVESTMENT message id {id} ({} body bytes)",
+                                                                           plain.len().saturating_sub(6));
++                                                                    // 701 / 702 are the client's own state, uploaded every so
++                                                                    // often: 701 = the account's block (0x80801716, at +0x80 of
++                                                                    // the account object), 702 = the character's (0x8080193C, at
++                                                                    // +0x2C40 of the profile). `D1_CLIENT_STATE_DIR` keeps the
++                                                                    // latest of each so the next login can be served what the
++                                                                    // client last knew (announcements seen, settings).
++                                                                    if id == 701 || id == 702 {
++                                                                        if let Ok(dir) = std::env::var("D1_CLIENT_STATE_DIR") {
++                                                                            let _ = std::fs::create_dir_all(&dir);
++                                                                            let tmp = format!("{dir}/{id}.tmp");
++                                                                            if std::fs::write(&tmp, &plain[6..]).is_ok() {
++                                                                                let _ = std::fs::rename(&tmp, format!("{dir}/{id}.bin"));
++                                                                            }
++                                                                        }
++                                                                    }
+                                                                     // `D1_INV_STATUS` drives the decode-skip probe.
+                                                                     let st: u16 = std::env::var("D1_INV_STATUS").ok()
+                                                                         .and_then(|v| v.parse().ok()).unwrap_or(200);
+@@ -3438,6 +3729,41 @@ async fn main() -> Result<()> {
                                                                                 body ({}B): {}", b.len(),
                                                                                b.iter().map(|x| format!("{x:02x}")).collect::<String>());
                                                                          Some(b)
@@ -2837,7 +2922,7 @@ index 6a76336..6a0d7d8 100644
                                                                      } else if id == 701 {
                                                                          // 701's response schema 0x8080189B is the SAME
                                                                          // one-composite shape as 504's, so the client's own
-@@ -3950,6 +4261,10 @@ async fn main() -> Result<()> {
+@@ -3950,6 +4276,10 @@ async fn main() -> Result<()> {
                                                                                  d1_bap::matchmaking::MM_KIND_MATCHMAKING_CONFIGURATION, 0)
                                                                          }
                                                                      };
@@ -2848,7 +2933,7 @@ index 6a76336..6a0d7d8 100644
                                                                      let b = rsp.encode();
                                                                      warn!("      -> msg 43 matchmaking_core_response: kind={:?} nonce={:?} \
                                                                             f4 present={} ({}B body: {})",
-@@ -4267,6 +4582,19 @@ async fn main() -> Result<()> {
+@@ -4267,6 +4597,19 @@ async fn main() -> Result<()> {
                                                              // block so `family4_span` can only have been set on an
                                                              // EARLIER frame - the client has demonstrably processed the
                                                              // baseline by then, i.e. the descriptor is at state 3.
@@ -2868,7 +2953,7 @@ index 6a76336..6a0d7d8 100644
                                                              let f4mode = family4_invalidate_mode();
                                                              if f4mode != Family4Invalidate::Off
                                                                  && conn_index == 0
-@@ -4726,7 +5054,7 @@ mod tests {
+@@ -4726,7 +5069,7 @@ mod tests {
          assert_eq!(b503.len(), 70, "the served 503 must be the ten-flag body");
          assert_eq!(b205.len(), 50, "the served 205 must be the ten-flag body");
          assert_eq!(

@@ -399,6 +399,9 @@ def session(args):
 
         env = dict(os.environ,
                    D1_MANIFEST_FILE=str(MANIFEST), D1_UPLOAD_DIR=str(run / "uploads"),
+                   # what the game uploads about itself (investment 701 / 702): kept across runs
+                   D1_CLIENT_STATE_DIR=str(REPO / "capture-rig" / "client-state"),
+                   D1_OBJECT_FILE=str(REPO / "d1-server" / "target" / "release" / "examples" / "object_file.exe"),
                    D1_BAP_IP=ip, D1_CLIENT_IP=ip, D1_AH_IP=ip)
         # A Guardian made in the game's creator stays the served one on later launches
         # (tools\creation_service.py writes capture-rig\guardians\current.txt; delete that file,
@@ -552,6 +555,27 @@ def session(args):
         procs.append(subprocess.Popen([str(RELEASE / "shadnet-server.exe"), "--bind", "127.0.0.1:31313"],
                                       cwd=REPO, stdout=open(run / "shadnet.log", "wb"),
                                       stderr=subprocess.STDOUT, creationflags=flags))
+        # The game's own state (tools\client_state.py): the character's block goes back into the
+        # served profile, the account's block is written into the account object by the login
+        # server. Kept per Guardian; the account's block is shared between them.
+        state_root = REPO / "capture-rig" / "client-state"
+        who = current.read_text().strip() if current.exists() else "default-hunter"
+        state_dir = state_root / who
+        state_dir.mkdir(parents=True, exist_ok=True)
+        shared_account = state_root / "account-701.bin"
+        if shared_account.exists():
+            shutil.copyfile(shared_account, state_dir / "701.bin")
+        env["D1_CLIENT_STATE_DIR"] = str(state_dir)
+        try:
+            sys.path.insert(0, str(Path(__file__).resolve().parent / "tools"))
+            import client_state
+            prof = env.get("D1_PROFILE_FILE")
+            if prof and Path(prof).exists() and not env.get("D1_EMPTY_ROSTER"):
+                n = client_state.apply(prof, str(state_dir))
+                if n:
+                    log(f"profile: {n} bytes of the game's own state written back")
+        except (SystemExit, Exception) as e:      # never a reason not to start
+            log(f"client state not applied: {e}")
         procs.append(subprocess.Popen([str(RELEASE / "d1-responder.exe"), "--bind", ip,
                                        "--cert", str(crt), "--key", str(key)],
                                       cwd=REPO, env=env, stdout=open(run / "responder.log", "wb"),
@@ -636,6 +660,12 @@ def session(args):
             clean = True        # the persistent block is meant to stay
         else:
             clean = stop_hosts_guard(stop_file) if hosts_present() else True
+        try:        # the account's block as the game last uploaded it, for every Guardian
+            latest = Path(env["D1_CLIENT_STATE_DIR"]) / "701.bin"
+            if latest.exists():
+                shutil.copyfile(latest, Path(env["D1_CLIENT_STATE_DIR"]).parent / "account-701.bin")
+        except Exception:
+            pass
         restored = restore_settings()
         log(f"cleanup: hosts {'restored' if clean else 'STILL REDIRECTED - run python d1_launch.py --restore'}, "
             f"shadPS4 settings {'restored' if restored else 'unchanged'}")

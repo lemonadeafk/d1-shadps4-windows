@@ -1879,3 +1879,41 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   (FUN_0012F1D0 / FUN_0012EEB0), anything else goes to a manager's vtable +0x128 - a toggle.
 - Inside-the-Wall script: the power-up fallback step was missing from its start cue (fixed).
 
+
+## 81. The orbit pop-ups are gone: the game's own state is kept and served back (2026-10-13 00:40-01:10, runs POP1, ST8-ST10, FAST5-6)
+- The "X OK" announcements in orbit ("PROVE YOUR WORTH IN HONORABLE COMBAT / CRUCIBLE
+  UNLOCKED" and two more) and the toast under them came back on every launch.
+- Their definitions: investment_globals entry 0x80a5ffef (class 0x808033eb), 15 records of
+  0x58 B: two flag expressions (0x808016e4 / 0x80801776 nodes; the Crucible one is "flag 98"),
+  a u16, a number at +0x40 (3208..3315) and a display block (class 0x808022ff: icon, string
+  container, title / subtitle / body hashes; text in bank 0x80a5e702). The numbers at +0x40
+  are NOT "seen" unlock flags: granting all 15 changed nothing (POP1).
+- Pressing X sends nothing to the server. What the game does send, every 10-90 s, is its own
+  state: investment 701 (request 0x808016DD -> 0x80801716, 1088 B) and 702 (0x808016CF ->
+  0x8080193C, 2592 B). The login server acknowledged them and threw them away.
+  * 0x80801716 is the structure at +0x80 of the ACCOUNT object (0x808018C7): a 1024-byte
+    block (all zero here), a u32 at +0x404, and 21 small settings fields (0x808017F0).
+  * 0x8080193C is the structure at +0x2C40 of the character PROFILE (0x80801743).
+  (d1-eboot descriptors --index --json --with-fields; parents searched by child tag.)
+- Measured: dismissing the three pop-ups changes exactly one thing - the u32 at +0x404 of the
+  701 block, 0x00408020 -> 0x20608820 (three more bits). 702 does not change.
+- FIX: d1-responder keeps the latest 701 / 702 body in D1_CLIENT_STATE_DIR; d1-bap
+  `with_client_state` (called by account_rsat) decodes the account object and the saved 701
+  body with the game's own codec (D1_OBJECT_FILE = object_file.exe), copies the 1088 bytes to
+  +0x80 and encodes again; tools\client_state.py does the same for 702 -> profile +0x2C40
+  (78 bytes differed from the empty block the profile was built with). d1_launch.py: state
+  per Guardian in capture-rig\client-state\<name>\, the account block shared
+  (account-701.bin, copied in at start and out at exit).
+- Result (ST10): orbit comes up with no announcement and no toast. Unattended launch: mission
+  98 s (was 108), Tower 92 s (was 102).
+- To set up: capture-rig\schemas\investment-message-definitions.bin (content tag 0x80A5E37A,
+  needed by `d1-eboot catalogue --investment`) was extracted from the user's packages.
+- Also this night, not fixed: the 0xBBDEDE crash happens at the area switch with NO trigger
+  armed too (GH2, D1_AH_SENSOR_FOLLOW_MAX=1; not in GH3 with the same settings). The value read,
+  0x4F, is what lies at entry -1 of the entity type table (0x2869CA8 - 0x80 + 0x30): the
+  simulation's stale-reference pass is handed an entity slot whose type is -1 (freed). The
+  emulator's crash report now prints every register, what they point at and the callers'
+  saved registers (shadPS4 2b3848bc) for the next time it happens. The Ghost in the open hand
+  is the game's default with no weapon, in every state tried (GH1, GH3); the mission's
+  tg_m0_gating record (kind 30) turns out to switch barrier volumes, not weapons.
+
