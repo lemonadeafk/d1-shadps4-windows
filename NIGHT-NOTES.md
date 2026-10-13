@@ -1994,3 +1994,15 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   at 0.5), rifle taken + Khvostov the instant the player is at it. No crash across the switch.
 - Not yet in the engine: the chest's "changed" cue is compiled but untested; Fallen squads
   without member records (section 76) still cannot be named.
+- (12:20, runs WPN1-2) "Weapons disabled" (activity option e0f3e461 = 1) gives the opening's look:
+  no hand, no Ghost, ability icons only. But it holds for the whole activity: a Khvostov loadout
+  push shows nothing (WPN1), and switching the option off + publishing global_activity_state
+  again (the host now does that whenever D1_AH_ACTIVITY_OPTIONS_FILE changes) does not bring it
+  back either (WPN2) - the client merges options only when the activity starts (FUN_00416B20 from
+  c_activity_game_system slot 2 / the activity shim slot 11). So the open hand with the Ghost
+  stays until the rifle; a way to re-run that merge mid-activity is not known.
+- Also found: udt 38 script_state {count, 512 x {u32, u32, u32, i32}} and udt 39 script_event
+  {u32, u32, u32, 2-bit type, 256-byte payload} have client handlers; they feed the HUD's
+  c_activity_script_value_component (mission counters / timers) - not cinematics. Cinematic
+  batches: loaded only by initial_slice_set_loading / prologue_intro_loading, unloaded on
+  entering in_world (764B20 with load 0, unload 6); nothing in-world reloads them that is known.

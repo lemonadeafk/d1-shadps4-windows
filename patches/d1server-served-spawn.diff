@@ -91,7 +91,7 @@ index b641c0d..95c99e0 100644
  pub mod push;
  pub mod registry;
 diff --git a/d1-server/crates/d1-activity-host/src/listener.rs b/d1-server/crates/d1-activity-host/src/listener.rs
-index c535359..e0956c9 100644
+index c535359..5b99a53 100644
 --- a/d1-server/crates/d1-activity-host/src/listener.rs
 +++ b/d1-server/crates/d1-activity-host/src/listener.rs
 @@ -151,6 +151,9 @@ pub struct AhConnection {
@@ -191,7 +191,7 @@ index c535359..e0956c9 100644
  /// heartbeat period, so three consecutive missed polls still leave the client's host-crash timeout
  /// un-tripped. Never zero.
  fn conn_heartbeat_poll(instance: &ActivityInstance) -> std::time::Duration {
-+    if instance.has_mission() {
++    if instance.has_mission() || std::env::var_os("D1_AH_ACTIVITY_OPTIONS_FILE").is_some() {
 +        // delayed mission steps are sent from the tick: keep it short
 +        return std::time::Duration::from_millis(100);
 +    }
@@ -961,7 +961,7 @@ index 0000000..d5c7f1d
 +    }
 +}
 diff --git a/d1-server/crates/d1-activity-host/src/state.rs b/d1-server/crates/d1-activity-host/src/state.rs
-index 891ceb8..89c2df2 100644
+index 891ceb8..b468a9c 100644
 --- a/d1-server/crates/d1-activity-host/src/state.rs
 +++ b/d1-server/crates/d1-activity-host/src/state.rs
 @@ -171,6 +171,8 @@ pub struct ActivityInstance {
@@ -973,7 +973,7 @@ index 891ceb8..89c2df2 100644
      /// ⭐⭐ The bubble count published at `global_activity_state+0x10` (and the `0xFF` unchosen
      /// bytes at `+0x14`). `FUN_002A0320` runs right after the checksum passes and requires this to
      /// equal the world's scenario bubble count (`orbit` = 16). `0` = every run to date =
-@@ -222,8 +224,38 @@ pub struct ActivityInstance {
+@@ -222,8 +224,40 @@ pub struct ActivityInstance {
      /// content record exists**, and the applier drops it silently (task #4) - so a repeating send
      /// is how at least one copy arrives after the world is resident.
      sensor_repeat: Option<Duration>,
@@ -992,6 +992,8 @@ index 891ceb8..89c2df2 100644
 +    /// `d1-oracle` example `sensor_frame`. A live experiment channel - off unless set.
 +    /// The client has sent `free_entity_indices` at least once. See `RequestStateRefresh`.
 +    client_pool_settled: bool,
++    /// Modification time of `D1_AH_ACTIVITY_OPTIONS_FILE` when last published.
++    options_mtime: Option<std::time::SystemTime>,
 +    /// When each trigger's prepared answer was last sent. See [`Self::incident_answers`].
 +    incident_answered: std::collections::HashMap<(u32, u32), Instant>,
 +    /// ⭐ `D1_AH_MISSION`: the mission engine, see [`crate::mission`].
@@ -1012,7 +1014,7 @@ index 891ceb8..89c2df2 100644
  }
  
  impl ActivityInstance {
-@@ -306,6 +338,7 @@ impl ActivityInstance {
+@@ -306,6 +340,7 @@ impl ActivityInstance {
              // 0 is what every run so far sent, and naming what 0 means is the point.
              activity_index: 0,
              activity_checksum: 0,
@@ -1020,7 +1022,7 @@ index 891ceb8..89c2df2 100644
              bubble_count: 0,
              bubble_chosen: Vec::new(),
              pah_region: None,
-@@ -320,6 +353,29 @@ impl ActivityInstance {
+@@ -320,6 +355,32 @@ impl ActivityInstance {
              sensor_sent: false,
              sensors_sent: 0,
              sensor_repeat: None,
@@ -1030,6 +1032,9 @@ index 891ceb8..89c2df2 100644
 +            current_region: 0,
 +            client_pool_settled: false,
 +            incident_answered: std::collections::HashMap::new(),
++            options_mtime: std::env::var_os("D1_AH_ACTIVITY_OPTIONS_FILE")
++                .and_then(|p| std::fs::metadata(p).ok())
++                .and_then(|m| m.modified().ok()),
 +            mission: std::env::var_os("D1_AH_MISSION").and_then(|p| {
 +                match crate::mission::Mission::load(std::path::Path::new(&p)) {
 +                    Ok(m) => {
@@ -1050,7 +1055,7 @@ index 891ceb8..89c2df2 100644
              sensor_last_sent: None,
          }
      }
-@@ -435,6 +491,175 @@ impl ActivityInstance {
+@@ -435,6 +496,186 @@ impl ActivityInstance {
          self.sensor_repeat = Some(every);
      }
  
@@ -1125,14 +1130,25 @@ index 891ceb8..89c2df2 100644
 +        self.mission_due(now)
 +    }
 +
-+    /// The mission engine's steps that are due.
++    /// The mission engine's steps that are due - and the activity state again when the activity
++    /// options file has changed (a mission switching an option, e.g. weapons disabled, at a
++    /// moment of its own).
 +    pub fn mission_due(&mut self, now: Instant) -> Vec<AhPush> {
 +        if !matches!(self.state, InstanceState::Live) {
 +            return Vec::new();
 +        }
-+        let Some(m) = self.mission.as_mut() else { return Vec::new() };
++        let mut republish = Vec::new();
++        if let Some(path) = std::env::var_os("D1_AH_ACTIVITY_OPTIONS_FILE") {
++            let m = std::fs::metadata(&path).ok().and_then(|m| m.modified().ok());
++            if m.is_some() && m != self.options_mtime {
++                self.options_mtime = m;
++                tracing::info!("⭐ activity options changed: publishing the activity state again");
++                republish.push(self.publish_activity_state());
++            }
++        }
++        let Some(m) = self.mission.as_mut() else { return republish };
 +        let outs = m.due(now);
-+        let mut pushes = Vec::new();
++        let mut pushes = republish;
 +        for crate::mission::Output::Frame { payload, .. } in outs {
 +            // counted like an injected frame: not part of the current burst
 +            self.sensors_sent += 1;
@@ -1226,7 +1242,7 @@ index 891ceb8..89c2df2 100644
      /// ⭐⭐ The udt-5 `sensor_auth_update`, sent **once** after the instance reaches [`Live`]
      /// (or on an interval, in [`Self::set_sensor_repeat`] mode).
      ///
-@@ -462,6 +687,11 @@ impl ActivityInstance {
+@@ -462,6 +703,11 @@ impl ActivityInstance {
              }
              // Repeat mode: pace on the interval since the last send.
              Some(every) => {
@@ -1238,7 +1254,7 @@ index 891ceb8..89c2df2 100644
                  if let Some(last) = self.sensor_last_sent {
                      if now.saturating_duration_since(last) < every {
                          return None;
-@@ -469,7 +699,13 @@ impl ActivityInstance {
+@@ -469,7 +715,13 @@ impl ActivityInstance {
                  }
              }
          }
@@ -1253,7 +1269,7 @@ index 891ceb8..89c2df2 100644
          self.sensor_sent = true;
          self.sensor_last_sent = Some(now);
          self.sensors_sent += 1;
-@@ -510,6 +746,7 @@ impl ActivityInstance {
+@@ -510,6 +762,7 @@ impl ActivityInstance {
          s.set_activity_index(self.activity_index);
          // ⭐⭐ The field that aborts rung 33's world transition when it disagrees with content.
          s.set_activity_checksum(self.activity_checksum);
@@ -1261,7 +1277,7 @@ index 891ceb8..89c2df2 100644
          // ⭐⭐ The bubble count + unchosen bytes that FUN_002A0320 validates right after. Bounded
          // to the 64-byte field; a too-large count is a config error, so publish what we can and let
          // the loud "bubble count mismatch" name a wrong number rather than silently truncating.
-@@ -518,6 +755,20 @@ impl ActivityInstance {
+@@ -518,6 +771,20 @@ impl ActivityInstance {
          // field, so order is load-bearing. An all-`0xFF` blob passes rung 33 and then UNREGISTERS
          // every slice-set region, which is rung 34's `error.sstm_slice_not_found`.
          let _ = s.set_bubble_chosen(&self.bubble_chosen);
@@ -1282,7 +1298,7 @@ index 891ceb8..89c2df2 100644
          AhPush::new(self.ah_id, AhMessage::GlobalActivityState(s))
      }
  
-@@ -586,6 +837,23 @@ impl ActivityInstance {
+@@ -586,6 +853,23 @@ impl ActivityInstance {
          // the operator reads it; every re-publish after it logs at DEBUG, because a refresh every
          // few seconds repeating the same receipt turns the run log into noise and hides the
          // warnings. The condition is the join/refresh discriminator we already track.
@@ -1306,7 +1322,7 @@ index 891ceb8..89c2df2 100644
          match self.pah_region {
              Some((region, peer, token)) => match m.set_pah_region(region, peer, token) {
                  Ok(()) if first => tracing::info!(
-@@ -723,6 +991,7 @@ impl ActivityInstance {
+@@ -723,6 +1007,7 @@ impl ActivityInstance {
              }
              ClientMessage::FreeEntityIndices(mask) => {
                  self.entities.free(mask);
@@ -1314,7 +1330,7 @@ index 891ceb8..89c2df2 100644
                  Vec::new()
              }
  
-@@ -752,13 +1021,28 @@ impl ActivityInstance {
+@@ -752,13 +1037,28 @@ impl ActivityInstance {
              // guard that stops the *join* from repeating them.
              ClientMessage::RequestStateRefresh { .. } => {
                  self.state_refreshes += 1;
@@ -1348,7 +1364,7 @@ index 891ceb8..89c2df2 100644
                  // The membership stays an ECHO. With no stored request there is nothing to echo
                  // and the push is lost rather than fabricated - the same rule as the join.
                  //
-@@ -817,13 +1101,71 @@ impl ActivityInstance {
+@@ -817,13 +1117,71 @@ impl ActivityInstance {
              //
              // Accepted and recorded, not acted on. A stub with one peer has nothing to reserve
              // against, and `43 reservations_failed` is for failures we cannot have.
@@ -1422,7 +1438,7 @@ index 891ceb8..89c2df2 100644
      /// Advance the replication epoch. `[C]` a `u8`; the wire payload is `{u8 epoch, u8 suppress}`.
      ///
      /// Nothing in a stub needs to call this - it exists because the epoch is authoritative state
-@@ -894,6 +1236,13 @@ impl ActivityInstance {
+@@ -894,6 +1252,13 @@ impl ActivityInstance {
          self.activity_checksum = checksum;
      }
  
