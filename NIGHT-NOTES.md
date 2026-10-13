@@ -2123,3 +2123,14 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
 - Compiler step ("phase", n, name); Restoration's wizard death -> o2 done -> seq_m_outro ->
   8 s -> phase 7. Every other frame carries phase 3, so the ending must be the last frame.
 - Next: what fills ACTIVITY REWARDS (and stops the spinner), what CONTINUE does (orbit?).
+- USER-VERIFIED (17:15): holding triangle (CONTINUE) on the post-game screen returns to orbit:
+  in_world -> cleanup (normal_flow) -> setup:orbit_loading -> setup:orbit; the client then sends
+  investment 205 (character refresh) and one xetrov telemetry message (protobuf-shaped, 2.5 KB,
+  fire-and-forget). The whole loop mission -> post game -> orbit is served, no pokes.
+- The ACTIVITY REWARDS spinner: nothing was requested. Names point at the progression system:
+  s_investment_incident_reward / s_investment_combatant_reward (rewards per incident / per enemy),
+  c_investment_activity_reward_tracker_game_system (collects them during the activity),
+  c_simulation_queue_investment_activity_proxy_set_activity_state +
+  s_investment_online_world_controller_activity_state, c_activity_reward_info,
+  s_post_game_reward. Kills/deaths columns: scoreboard record 4786c0e0 kind 15, schema
+  0x808008D0 (19792 B), never served.
