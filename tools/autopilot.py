@@ -99,7 +99,7 @@ DESTINATIONS = {
              # (its state channel 2 = how far it is lifted; the state entry's schema must be
              # registered in the host's encoder)
              "D1_ORACLE_EXTRA_TAGS=0x8080279a",
-             "D1_AH_SENSOR_SLOT_VALUE=" + ",".join("fc0e45a3:%d:808007d9:%s" % (sub, os.path.join(ROOT, "capture", "values", "gate_open.bin")) for sub in (5, 6))
+             "D1_AH_SENSOR_SLOT_VALUE=" + ",".join("fc0e45a3:%d:808007d9:%s" % (sub, os.path.join(ROOT, "capture", "values", "gate_absent.bin")) for sub in (5, 6))
              + ",fc0e45a3:95:80800868:" + os.path.join(ROOT, "capture", "values", "member_exists.bin")
              # the gate before the rifle (m0_power_up) served closed, so the power-up can lift
              # it partway; the roller door in front of it (o_breach_doors_lights, sub 1) served
