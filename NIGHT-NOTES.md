@@ -1643,3 +1643,21 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
 - REQUESTED NEXT (user, after this): make the unattended launch faster - from game launch to
   the Patrol the Cosmodrome launch, "at least a minute": too many cursor movements, and too
   long before X is pressed on the orbit pop-ups.
+
+## 74. Unattended launch: 3 min 24 s -> 1 min 48 s (2026-10-12 21:00, runs FAST1-4)
+- Baseline (TRIG4, launch -> in the mission): 204 s. Stage times from the run's screenshots:
+  boot to title 39 s, title to orbit 42 s, orbit to Earth hovered 55 s, Earth to LAUNCH 41 s,
+  loading 27 s.
+- Changes: (1) d1_launch.py starts the game at once - it used to wait for the activity host's
+  "listening" line, which only comes after the host has built its sensor frames (about 1 s per
+  bubble, 25 s for the Cosmodrome); the game needs the host over a minute later. The line is
+  now watched in a background thread. (2) open_director.py presses X the moment a pop-up is on
+  screen (was: press, wait 2.5 s) and waits for the Director by looking at the picture (was
+  6 s). (3) launch_patrol.py / launch_tower.py: fixed waits of 6 / 5 / 6 s replaced by
+  open_director.settle() (the picture has stopped changing) or cut. (4) cursor.find() is
+  vectorised with numpy: 0.08 s per frame instead of seconds. (5) autopilot.py: title X every
+  second, state polling 0.3 s, shorter pauses before screenshots.
+- Result: mission 148 s after (2)-(5), 109 s and 108 s with (1) as well; Tower 102 s. Orbit is
+  reached 48 s after launch (was 81 s). What is left: about 24 s from orbit to Earth hovered
+  (the pop-ups themselves and their animations - not showing them at all would need the
+  server to mark them seen) and about 25 s of the game loading the world.

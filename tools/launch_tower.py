@@ -20,14 +20,14 @@ import cursor  # noqa: E402
 def main():
     prefix = sys.argv[1] if len(sys.argv) > 1 else None
     open_director.main()
-    gamewin.key("n")                 # select the Tower
-    time.sleep(4)
+    gamewin.tap("n")                 # select the Tower
+    time.sleep(2.0)
     cursor.steer(1057, 548, log=print)   # LAUNCH (bottom right)
-    time.sleep(0.5)
+    time.sleep(0.2)
     if prefix:
         gamewin.shot_bg(prefix + "-launch-hover.png")
-    gamewin.key("n")                 # LAUNCH
-    time.sleep(6)
+    gamewin.tap("n")                 # LAUNCH
+    time.sleep(1.0)
     if prefix:
         print(gamewin.shot_bg(prefix + "-launched.png"))
 

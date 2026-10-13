@@ -566,10 +566,22 @@ def session(args):
                                            "--bind", f"{ip}:4110"],
                                           cwd=REPO, env=env, stdout=open(run / "activity-host.log", "wb"),
                                           stderr=subprocess.STDOUT, creationflags=flags))
-            if not wait_log(run / "activity-host.log", f"activity-host listening on {ip}:4110", timeout=120):
-                log(f"d1-activity-host did not report its listener - see {run / 'activity-host.log'}")
+            # The host builds its sensor frames (about a second per bubble: 25 s for the 22-bubble
+            # Cosmodrome) before it listens, and the game does not talk to it until an activity
+            # is launched - over a minute into the session. So the game starts NOW and the
+            # listener is only watched for in the background (this wait used to hold the
+            # whole launch back).
+            def watch_host(path=run / "activity-host.log", proc=procs[-1]):
+                if wait_log(path, f"activity-host listening on {ip}:4110", timeout=180):
+                    log(f"activity host up on 4110 (world {env.get('D1_AH_ACTIVITY', 'pvp_moonbase')}, activity {env.get('D1_AH_ACTIVITY_INDEX', '407')})")
+                else:
+                    log(f"WARNING: d1-activity-host did not report its listener - launching an activity will fail; see {path}")
+            import threading
+            threading.Thread(target=watch_host, daemon=True).start()
+            time.sleep(1.0)
+            if procs[-1].poll() is not None:
+                log(f"d1-activity-host exited at once - see {run / 'activity-host.log'}")
                 return 1
-            log(f"activity host up on 4110 (world {env.get('D1_AH_ACTIVITY', 'pvp_moonbase')}, activity {env.get('D1_AH_ACTIVITY_INDEX', '407')})")
         if not wait_port("127.0.0.1", 31313):
             log(f"shadnet-server did not come up on 127.0.0.1:31313 - see {run}")
             return 1

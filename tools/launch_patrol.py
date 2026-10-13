@@ -23,25 +23,25 @@ def main(prefix=None):
             gamewin.shot_bg(f"{prefix}-{tag}.png")
 
     open_director.main()
-    gamewin.hold(["s"], 2.5)          # cursor to the bottom edge (the map scrolls with it)
-    time.sleep(0.8)
+    gamewin.hold(["s"], 1.6)          # cursor to the bottom edge (the map scrolls with it)
+    time.sleep(0.3)
     gamewin.hold(["w"], 0.22)         # up onto Earth
-    time.sleep(1.5)
-    shot("earth-hover")
-    gamewin.key("n")                  # open Earth's map
-    time.sleep(6)
-    gamewin.hold(["w"], 0.2)          # the Patrol node sits just above-left of the cursor
     time.sleep(0.6)
+    shot("earth-hover")
+    gamewin.tap("n")                  # open Earth's map
+    open_director.settle()            # (fixed waits of 6 s / 5 s / 6 s used to stand here)
+    gamewin.hold(["w"], 0.2)          # the Patrol node sits just above-left of the cursor
+    time.sleep(0.3)
     gamewin.hold(["a"], 0.05)
-    time.sleep(1.5)
+    time.sleep(0.7)
     shot("patrol-hover")
-    gamewin.key("n")                  # select Patrol
-    time.sleep(5)
+    gamewin.tap("n")                  # select Patrol
+    time.sleep(2.0)
     cursor.steer(1057, 548, log=None)  # LAUNCH (bottom right, orbit view)
-    time.sleep(0.5)
+    time.sleep(0.2)
     shot("launch-hover")
-    gamewin.key("n")
-    time.sleep(6)
+    gamewin.tap("n")
+    time.sleep(1.0)
     shot("launched")
 
 

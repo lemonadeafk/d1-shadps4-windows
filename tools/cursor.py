@@ -23,44 +23,33 @@ RING, INNER, OUTER = _offsets(R), _offsets(R - 10, 24), _offsets(R + 14, 24)
 
 
 def find(im):
-    im = im.convert("L")
-    w, h = im.size
-    px = im.load()
+    """(x, y, score) of the best ring candidate. Vectorised: every pixel is scored at once
+    (the first version walked the image in Python and took seconds per frame)."""
+    import numpy as np
+    g = np.asarray(im.convert("L"), dtype=np.int16)
+    h, w = g.shape
+    pad = R + 14
+    ring_src = np.pad(g, pad, constant_values=255)      # outside the screen never lowers the minimum
+    val_src = np.pad(g, pad, constant_values=0)
+    inside = np.pad(np.ones_like(g), pad, constant_values=0)
 
-    def lowest(cx, cy, offs):
-        m, n = 255, 0
-        for dx, dy in offs:
-            x, y = cx + dx, cy + dy
-            if 0 <= x < w and 0 <= y < h:       # the ring may be clipped by a screen edge
-                m = min(m, px[x, y])
-                n += 1
-        return m if n >= len(offs) * 0.55 else 0
+    def window(src, dx, dy):
+        return src[pad + dy:pad + dy + h, pad + dx:pad + dx + w]
 
-    def score(cx, cy):
-        return lowest(cx, cy, RING) - mean(cx, cy, INNER)   # interior is always darker than the ring
-
-    def mean(cx, cy, offs):
-        tot = n = 0
-        for dx, dy in offs:
-            x, y = cx + dx, cy + dy
-            if 0 <= x < w and 0 <= y < h:
-                tot += px[x, y]
-                n += 1
-        return tot / n if n else 0
-
-    best = (-1e9, 0, 0)
-    for cy in range(0, h, 3):                   # coarse pass
-        for cx in range(0, w, 3):
-            s = score(cx, cy)
-            if s > best[0]:
-                best = (s, cx, cy)
-    _, bx, by = best
-    for cy in range(by - 3, by + 4):            # fine pass
-        for cx in range(bx - 3, bx + 4):
-            s = score(cx, cy)
-            if s > best[0]:
-                best = (s, cx, cy)
-    return best[1], best[2], best[0]
+    ring_min = np.full((h, w), 255, dtype=np.int16)
+    ring_n = np.zeros((h, w), dtype=np.int16)
+    for dx, dy in RING:
+        np.minimum(ring_min, window(ring_src, dx, dy), out=ring_min)
+        ring_n += window(inside, dx, dy)
+    ring_min[ring_n < len(RING) * 0.55] = 0             # the ring may be clipped by a screen edge
+    total = np.zeros((h, w), dtype=np.int32)
+    count = np.zeros((h, w), dtype=np.int32)
+    for dx, dy in INNER:
+        total += window(val_src, dx, dy)
+        count += window(inside, dx, dy)
+    score = ring_min - total / np.maximum(count, 1)      # the interior is always darker than the ring
+    y, x = np.unravel_index(int(np.argmax(score)), score.shape)
+    return int(x), int(y), float(score[y, x])
 
 
 if __name__ == "__main__":
@@ -119,5 +108,5 @@ def steer(tx, ty, tol=22, tries=18, log=None):
             gamewin.hold(["d" if dx > 0 else "a"], min(0.45, max(0.03, abs(dx) / 900.0)))
         elif abs(dy) > tol:
             gamewin.hold(["s" if dy > 0 else "w"], min(0.45, max(0.03, abs(dy) / 900.0)))
-        time.sleep(0.45)
+        time.sleep(0.25)
     return False

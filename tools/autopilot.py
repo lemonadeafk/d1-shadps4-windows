@@ -185,16 +185,16 @@ def drive(name, stop_at, timeout, extra=(), inworld_args=(), dest="tower"):
             if "title" not in shots and time.time() - t0 > 20:
                 shot(run, "title")
                 shots.add("title")
-            gamewin.key("n")                     # the title screen's "press X"
+            gamewin.tap("n")                     # the title screen's "press X"
             pressed += 1
-            time.sleep(3)
+            time.sleep(1)
             continue
         if state == "bootflow:profile_setup":
             # The first-run screens (screen bounds, brightness - which takes ◯, not ✕) are a counter
             # at static BSS 0x26B4070+0x38; 0x79E830 treats > 6 as done and requests
             # prepare_for_orbit (d1preservation status/TODO.md "UNATTENDED RUNS", 2/2 runs).
             if "settings" not in shots:
-                time.sleep(3)
+                time.sleep(1)
                 shot(run, "settings")
                 shots.add("settings")
                 r = subprocess.run([sys.executable, os.path.join(HERE, "d1guest_win.py"), "poke",
@@ -211,7 +211,7 @@ def drive(name, stop_at, timeout, extra=(), inworld_args=(), dest="tower"):
             log("at character:signin - stopping here as asked")
             return run
         if state == "setup:orbit":
-            time.sleep(5)
+            time.sleep(1)
             shot(run, "orbit")
             log(f"in orbit after {time.time() - t0:.0f} s and {pressed} key press(es)")
             if stop_at == "orbit":
@@ -223,13 +223,13 @@ def drive(name, stop_at, timeout, extra=(), inworld_args=(), dest="tower"):
                 subprocess.run([sys.executable, os.path.join(HERE, DESTINATIONS[dest]["launch"]),
                                 os.path.join(run, "director")], cwd=ROOT, check=True)
                 while time.time() < end and "activity:initial_slice_set_loading" not in last_state(run):
-                    time.sleep(2)
+                    time.sleep(0.5)
                 # Nothing is poked on this route: the activity host serves the lifetime phase and
                 # seats our player in a slot (d1_launch.py --director), and the game spawns the
                 # Guardian through its own gates (NIGHT-NOTES section 14).
                 while time.time() < end and "activity:in_world" not in last_state(run):
-                    time.sleep(2)
-                time.sleep(8)
+                    time.sleep(0.5)
+                time.sleep(2)
                 shot(run, "inworld")
                 log(f"state {last_state(run)}; in the Tower via the Director with no pokes")
                 return run
@@ -248,7 +248,7 @@ def drive(name, stop_at, timeout, extra=(), inworld_args=(), dest="tower"):
                     shot(run, "inworld-failed")
                     raise SystemExit("d1_inworld.py ended early - see " + os.path.join(run, "inworld.log"))
             break
-        time.sleep(1)
+        time.sleep(0.3)
     shot(run, "timeout")
     raise SystemExit(f"timed out in state {last}")
 

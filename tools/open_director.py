@@ -40,26 +40,61 @@ def director_open(im):
     return sum(max(p) for p in pts) / len(pts) < 70
 
 
+def wait_for(pred, timeout, every=0.2):
+    """Poll background screenshots until pred(image) is true; False on timeout."""
+    end = time.time() + timeout
+    while time.time() < end:
+        if pred(shot()):
+            return True
+        time.sleep(every)
+    return False
+
+
+def settle(timeout=8.0, quiet=0.45, tol=2.0, first=0.5):
+    """Wait until the picture stops changing (a screen transition has finished)."""
+    import numpy as np
+    time.sleep(first)                           # the transition has to start first
+    prev, since, end = None, None, time.time() + timeout
+    while time.time() < end:
+        im = np.asarray(shot().convert("L").resize((160, 90)), dtype=np.int16)
+        if prev is not None and np.abs(im - prev).mean() < tol:
+            since = since or time.time()
+            if time.time() - since >= quiet:
+                return True
+        else:
+            since = None
+        prev = im
+        time.sleep(0.12)
+    return False
+
+
 def main(out=None):
-    for _ in range(10):
-        if not popup_showing(shot()):
-            break
-        gamewin.key("n")
-        time.sleep(2.5)
+    # The arrival popups (their number varies): press X the moment one is showing; done once
+    # none has shown for a second. (This used to wait 2.5 s after every press.)
+    clear_since, end = None, time.time() + 45
+    while time.time() < end:
+        if popup_showing(shot()):
+            gamewin.tap("n")
+            clear_since = None
+            time.sleep(0.3)
+        else:
+            clear_since = clear_since or time.time()
+            if time.time() - clear_since > 1.0:
+                break
+            time.sleep(0.12)
     else:
         raise SystemExit("popups never cleared")
-    time.sleep(1.0)
     for attempt in range(3):
         cursor.steer(190, 540, log=print)       # SET DESTINATION (bottom left)
-        gamewin.key("n")
-        time.sleep(6)
-        if director_open(shot()):
+        gamewin.tap("n")
+        if wait_for(director_open, 8):
             break
         print("Director did not open; retrying")
     else:
         raise SystemExit("could not open the Director")
+    time.sleep(0.6)                             # the star chart is still sliding in
     gamewin.hold(["s"], 0.04)
-    time.sleep(0.8)
+    time.sleep(0.4)
     if out:
         print(gamewin.shot_bg(out))
 
