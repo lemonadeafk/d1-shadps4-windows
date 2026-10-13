@@ -1775,3 +1775,53 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
 - USER REQUIREMENT: the rifle and the chest weapon must be picked up by holding Square, as in
   the real game - never appear in the inventory on arrival. The chest already shows the
   game's own prompt; what makes o_weapon interactable is not found yet.
+
+## 78. Light flares through walls FIXED: real occlusion queries + predication in shadPS4 (2026-10-12 22:20-22:35, runs OQ1-OQ2)
+- Symptom (user): light bulbs / light sources "bleed through walls and through the character
+  view". The emulator log had 1445 x "Unimplemented IT_SET_PREDICATION" in one Tower session.
+- How the game does it (trace, D1_OQ_TRACE=<lines> in the emulator's environment writes
+  oq-trace.txt next to shadps4.exe): per light, per frame: ZPASS_DONE PixelPipeStatDump event
+  at address A (query begin), ONE proxy draw, the same event at A+8 (query end). About 2000
+  draws earlier in the NEXT frame: IT_SET_PREDICATION {A, ctl 0x00011102 = z-pass, draw when
+  visible, no-wait}, one draw with the PM4 header's predicate bit, IT_SET_PREDICATION clear.
+  About 30 lights a frame in the Tower; result blocks are 0x80 apart (8 begin/end pairs).
+- shadPS4 wrote an ever-growing fake counter (= always visible) and ignored predication.
+- Fix (shadPS4 dcdc81d3, patches\shadps4-occlusion-queries.diff): the query's draw is wrapped
+  in a Vulkan occlusion query (pool of 8192, host reset, precise when the device has it);
+  finished counts are kept per results address; the count written to the guest at the next
+  begin/end of that address is the last finished one (begin 0, end = count in the first
+  pair); IT_SET_PREDICATION looks the address up and packets with the predicate bit are dropped
+  while it fails. Unknown address / no result yet = draw, as the no-wait hint says.
+- Result: counts are real (0, 151, 283, 24027...). The game itself stops issuing flare draws
+  for hidden lights once it reads zeros: IT_SET_PREDICATION went from about 30 to about 1 per
+  frame. Desktop\LIGHTS-1-before... / LIGHTS-2-after...: the orange blobs over the Tower plaza
+  are gone, the lamps that are in view keep their flare.
+
+## 79. The Guardian in the character screen was black: masked stencil clear FIXED in shadPS4 (2026-10-12 22:36-22:52, runs RD2, ST1, RD3)
+- Capture (autopilot --renderdoc, then touch %APPDATA%\shadPS4\capture.trigger; the .rdc lands
+  in %APPDATA%\shadPS4\captures): the menu Guardian IS drawn into the G-buffer correctly
+  (albedo fine); the light accumulation targets are empty, so the composite is black.
+- Pixel history: the three menu lights pass every test on the Guardian's pixels and their
+  shader returns 0. The light shader reads the STENCIL buffer as a texture and decodes per-
+  pixel material bits from it (value/32, bit tests). The G-buffer writes stencil 36 for the
+  Guardian; one draw later in the frame set it to 0.
+- That draw: DB_RENDER_CONTROL.STENCIL_CLEAR_ENABLE with stencil write mask 0x10 - the game
+  clears / sets only its light-volume bit, screen-wide, several times a frame. shadPS4 turned
+  any stencil clear into an attachment clear (loadOp CLEAR, write mask forced to 0): all eight
+  bits wiped, material bits gone. The world outside was affected the same way (local lights
+  could not see the material bits).
+- Fix (shadPS4 fb35111d, patches\shadps4-masked-stencil-clear.diff): a stencil clear whose
+  write mask is neither 0xFF nor 0 is done by the clearing draw itself - stencil ops REPLACE,
+  compare ALWAYS, reference = the clear value, the game's write mask. Seen masks are logged
+  once ("stencil clear with write mask ..."): 0xff (value 4, frame start) and 0x10.
+- Result: the Guardian is lit in the character screen (Desktop\GUARDIAN-lit-in-character-
+  screen.png). In the Tower the lamps' local lights now light the market, and a PUDDLE with
+  reflections appeared on the plaza floor (a real 5-triangle water mesh, draw reads a
+  480x270 reflection buffer): not there before the fix. Whether it is as dark / mirror-like
+  as it should be is NOT verified - needs the user's eye.
+- Tools: rdc_survey history now prints depth and stencil before/after; apievents prints
+  stencil / depth calls in full; rdc_eval knows gl_FragCoord inputs, vector bit-casts and more
+  GLSL ops (its barycentrics still assume a full-screen triangle).
+- Open: inside the Wall a red light shows wide repeated streak bands across the screen
+  (vis-wall-c) - lens streak or a wrap-mode problem, not looked at yet.
+

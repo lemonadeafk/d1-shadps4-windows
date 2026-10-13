@@ -289,7 +289,9 @@ def history(specs):
                         flags.append(name)
                 f.write(f"eid {m.eventId} prim {m.primitiveID} passed={m.Passed()} "
                         f"pre {[round(v, 5) for v in pre]} shader {[round(v, 5) for v in sh]} "
-                        f"post {[round(v, 5) for v in post]} {' '.join(flags)}" + chr(10))
+                        f"post {[round(v, 5) for v in post]} "
+                        f"depth {round(m.preMod.depth, 6)}->{round(m.postMod.depth, 6)} "
+                        f"stencil {m.preMod.stencil}->{m.postMod.stencil} {' '.join(flags)}" + chr(10))
         log("history", tid, x, y, len(mods))
     ctl.Shutdown()
     cap.Shutdown()
@@ -358,7 +360,7 @@ def apievents(spec):
                 if lo <= ev.eventId <= hi:
                     ch = sf.chunks[ev.chunkIndex]
                     lines.append(f"== eid {ev.eventId} {ch.name}")
-                    if any(k in ch.name for k in ("Barrier", "Rendering", "Clear", "Copy", "Blit")):
+                    if any(k in ch.name for k in ("Barrier", "Rendering", "Clear", "Copy", "Blit", "Stencil", "Depth")):
                         out = []
                         for i in range(ch.NumChildren()):
                             dump(ch.GetChild(i), 1, out)

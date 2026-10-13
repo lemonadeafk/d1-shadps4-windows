@@ -72,6 +72,7 @@ def main():
     by = (dx * e2[1] - e2[0] * dy) / det
     bz = (e1[0] * dy - dx * e1[1]) / det
     bary = (1 - by - bz, by, bz)
+    builtins = dict(re.findall(r"Input \S+ (_\d+) : \[\[BuiltIn\((\w+)\)\]\]", open(sh, encoding="utf-8").read()))
 
     cache_path = os.path.join(work, "texels.json")
     cache = json.load(open(cache_path)) if os.path.exists(cache_path) else {}
@@ -159,6 +160,11 @@ def main():
                 tgt = ptr.get(rhs[1:], rhs[1:])
                 if tgt.startswith("push_data"):
                     env[name] = 0
+                elif re.fullmatch(r"_\d+(\.[xyzw])?", tgt) and tgt.split(".")[0] in builtins:
+                    # a built-in input (which one is read from the module's decorations)
+                    whole = ((px + 0.5, py + 0.5, 0.0, 1.0) if builtins[tgt.split(".")[0]] == "FragCoord"
+                             else bary)
+                    env[name] = whole["xyzw".index(tgt[-1])] if "." in tgt else whole
                 elif tgt == "_49" or "BaryCoord" in tgt:
                     env[name] = bary
                 elif tgt.startswith("ssbo_"):
@@ -179,7 +185,8 @@ def main():
                 fn, a = m2.group(1).split("::")[-1], args_of(m2.group(2))
                 if fn == "Bitcast":
                     v = val(a[0])
-                    env[name] = u2f(v) if typ.startswith("f32") else (f2u(v) if isinstance(v, float) else v)
+                    one = lambda q: (q if isinstance(q, float) else u2f(q)) if typ.startswith("f32") else (f2u(q) if isinstance(q, float) else q)
+                    env[name] = [one(q) for q in v] if isinstance(v, list) else one(v)
                 elif fn == "BitFieldUExtract":
                     env[name] = (val(a[0]) >> val(a[1])) & ((1 << val(a[2])) - 1)
                 elif fn == "Fma":
@@ -200,6 +207,47 @@ def main():
                 elif fn == "Log2":
                     v = val(a[0])
                     env[name] = math.log2(v) if v > 0 else float("-inf")
+                elif fn == "Fract":
+                    env[name] = val(a[0]) - math.floor(val(a[0]))
+                elif fn in ("Sin", "Cos", "Exp", "Ceil", "Trunc"):
+                    env[name] = float(getattr(math, fn.lower())(val(a[0])))
+                elif fn == "Round" or fn == "RoundEven":
+                    env[name] = float(round(val(a[0])))
+                elif fn == "Log":
+                    v = val(a[0])
+                    env[name] = math.log(v) if v > 0 else float("-inf")
+                elif fn == "Pow":
+                    env[name] = max(val(a[0]), 0.0) ** val(a[1])
+                elif fn == "FSign":
+                    v = val(a[0])
+                    env[name] = float((v > 0) - (v < 0))
+                elif fn in ("FMix", "Mix"):
+                    env[name] = val(a[0]) * (1 - val(a[2])) + val(a[1]) * val(a[2])
+                elif fn in ("NMin", "SMin", "UMin"):
+                    env[name] = min(val(a[0]), val(a[1]))
+                elif fn in ("NMax", "SMax", "UMax"):
+                    env[name] = max(val(a[0]), val(a[1]))
+                elif fn in ("NClamp", "SClamp", "UClamp"):
+                    env[name] = min(max(val(a[0]), val(a[1])), val(a[2]))
+                elif fn in ("ConvertSToF", "ConvertUToF"):
+                    v = val(a[0])
+                    if fn == "ConvertSToF" and v >= 1 << 31:
+                        v -= 1 << 32
+                    env[name] = float(v)
+                elif fn == "ConvertFToU":
+                    env[name] = max(int(val(a[0])), 0)
+                elif fn in ("Not", "LogicalNot"):
+                    v = val(a[0])
+                    env[name] = (not v) if isinstance(v, bool) else (~v & 0xFFFFFFFF)
+                elif fn == "FNegate":
+                    env[name] = -val(a[0])
+                elif fn == "IsNan":
+                    env[name] = val(a[0]) != val(a[0])
+                elif fn == "IsInf":
+                    env[name] = abs(val(a[0])) == float("inf")
+                elif fn == "BitFieldSExtract":
+                    v = (val(a[0]) >> val(a[1])) & ((1 << val(a[2])) - 1)
+                    env[name] = v - (1 << val(a[2])) if v >> (val(a[2]) - 1) else v
                 elif fn == "Floor":
                     env[name] = float(math.floor(val(a[0])))
                 elif fn == "FAbs":
@@ -223,6 +271,8 @@ def main():
             m2 = re.fullmatch(r"(\S+) (\+|-|\*|/|>|<|>=|<=|==|!=|\|\||&&|>>|<<|&|\|) (\S+)", rhs)
             if m2:
                 x, op, y = val(m2.group(1)), m2.group(2), val(m2.group(3))
+                if isinstance(x, (list, str)) or isinstance(y, (list, str)):
+                    raise SystemExit(f"non-scalar operand: {l}  x={x!r} y={y!r}")
                 if op == "/":
                     env[name] = x / y if y else float("inf")
                 else:

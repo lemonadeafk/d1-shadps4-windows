@@ -199,6 +199,153 @@ index 6f2075fb..d85350dc 100644
          }
      } else {
          // We don't know the type yet, delay its resolution.
+diff --git a/src/video_core/amdgpu/liverpool.cpp b/src/video_core/amdgpu/liverpool.cpp
+index 547ba8b5..835e39bb 100644
+--- a/src/video_core/amdgpu/liverpool.cpp
++++ b/src/video_core/amdgpu/liverpool.cpp
+@@ -1,6 +1,9 @@
+ // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ 
++#include <cstdio>
++#include <optional>
++#include <cstdlib>
+ #include <boost/preprocessor/stringize.hpp>
+ 
+ #include "common/assert.h"
+@@ -20,6 +23,29 @@
+ 
+ namespace AmdGpu {
+ 
++// Destiny 1: trace of occlusion queries and predication (env D1_OQ_TRACE = lines to write).
++static u64 oq_trace_draws = 0;
++template <typename... Args>
++static void OqTrace(fmt::format_string<Args...> f, Args&&... args) {
++    static int left = [] {
++        const char* e = std::getenv("D1_OQ_TRACE");
++        return e ? std::atoi(e) : 0;
++    }();
++    static FILE* out = left > 0 ? std::fopen("oq-trace.txt", "w") : nullptr;
++    if (!out || left <= 0) {
++        return;
++    }
++    --left;
++    const auto line = fmt::format(f, std::forward<Args>(args)...);
++    std::fputs(line.c_str(), out);
++    std::fputc(10, out);
++    if (left == 0) {
++        std::fclose(out);
++        out = nullptr;
++    }
++}
++
++
+ static const char* dcb_task_name{"DCB_TASK"};
+ static const char* ccb_task_name{"CCB_TASK"};
+ 
+@@ -256,6 +282,20 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
+         case 3:
+             const u32 count = header->type3.NumWords();
+             const PM4ItOpcode opcode = header->type3.opcode;
++            if (opcode == PM4ItOpcode::DrawIndex2 || opcode == PM4ItOpcode::DrawIndexOffset2 ||
++                opcode == PM4ItOpcode::DrawIndexAuto) {
++                ++oq_trace_draws;
++                if ((header->raw & 1u) != 0) {
++                    OqTrace("PREDICATED-DRAW draw#{} opcode={:#x} skip={}", oq_trace_draws,
++                            u32(opcode), predication_skip);
++                }
++            }
++            // A packet with the predicate bit is dropped while the predication set by
++            // IT_SET_PREDICATION fails.
++            if (predication_skip && (header->raw & 1u) != 0) {
++                dcb = NextPacket(dcb, header->type3.NumWords() + 1);
++                continue;
++            }
+             switch (opcode) {
+             case PM4ItOpcode::Nop: {
+                 const auto* nop = reinterpret_cast<const PM4CmdNop*>(header);
+@@ -411,7 +451,22 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
+                 break;
+             }
+             case PM4ItOpcode::SetPredication: {
+-                LOG_WARNING(Render, "Unimplemented IT_SET_PREDICATION");
++                // {start address low; address high 0-7, action 8 (1 = draw when visible),
++                // hint 12 (1 = draw when the result is not there yet), operation 16-18
++                // (0 clear, 1 z-pass, 2 primitive count), continue 31}
++                const u32 lo = count > 0 ? header[1].raw : 0u;
++                const u32 ctl = count > 1 ? header[2].raw : 0u;
++                const u32 op = (ctl >> 16) & 7u;
++                predication_skip = false;
++                if (op == 1 && rasterizer) {
++                    const VAddr results = (u64(ctl & 0xFFu) << 32) | lo;
++                    const bool draw_if_visible = ((ctl >> 8) & 1u) != 0;
++                    if (const auto samples = rasterizer->OcclusionResult(results)) {
++                        predication_skip = (*samples != 0) != draw_if_visible;
++                    }
++                    OqTrace("PRED draw#{} addr={:x} ctl={:08x} skip={}", oq_trace_draws, results,
++                            ctl, predication_skip);
++                }
+                 break;
+             }
+             case PM4ItOpcode::IndexType: {
+@@ -670,10 +725,41 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
+                         static constexpr u64 OcclusionCounterValidMask = 0x8000000000000000ULL;
+                         static constexpr u64 OcclusionCounterStep = 0x2FFFFFFULL;
+                         u64* results = event->Address<u64*>();
+-                        for (s32 i = 0; i < num_counter_pairs; ++i, results += 2) {
+-                            *results = pixel_counter | OcclusionCounterValidMask;
++                        // Results are pairs of {begin, end} counters, one pair per render
++                        // backend: the begin event is given the address of a pair's begin, the
++                        // end event that of its end (+8). The host counts the query's draw; what
++                        // is written here is the last FINISHED result for this address (the
++                        // query that is ending has not run on the host yet) - begin 0, end the
++                        // count, all of it in the first pair. Until a result is known the old
++                        // ever-growing counter is written (= always visible).
++                        const VAddr addr = VAddr(uintptr_t(results));
++                        const bool is_end = (addr & 8u) != 0;
++                        std::optional<u64> known{};
++                        if (rasterizer) {
++                            if (is_end) {
++                                rasterizer->EndOcclusionQuery(addr - 8);
++                                known = occlusion_begin_real
++                                            ? rasterizer->OcclusionResult(addr - 8)
++                                            : std::nullopt;
++                            } else {
++                                rasterizer->BeginOcclusionQuery(addr);
++                                known = rasterizer->OcclusionResult(addr);
++                                occlusion_begin_real = known.has_value();
++                            }
++                        }
++                        OqTrace("ZPASS draw#{} addr={:x} known={}", oq_trace_draws, addr,
++                                known ? s64(*known) : s64(-1));
++                        if (known) {
++                            for (s32 i = 0; i < num_counter_pairs; ++i, results += 2) {
++                                *results = (is_end && i == 0 ? *known : 0) |
++                                           OcclusionCounterValidMask;
++                            }
++                        } else {
++                            for (s32 i = 0; i < num_counter_pairs; ++i, results += 2) {
++                                *results = pixel_counter | OcclusionCounterValidMask;
++                            }
++                            pixel_counter += OcclusionCounterStep;
+                         }
+-                        pixel_counter += OcclusionCounterStep;
+                     }
+                 }
+                 break;
+diff --git a/src/video_core/amdgpu/liverpool.h b/src/video_core/amdgpu/liverpool.h
+index 1d7fae48..f9b692c7 100644
+--- a/src/video_core/amdgpu/liverpool.h
++++ b/src/video_core/amdgpu/liverpool.h
+@@ -209,6 +209,8 @@ private:
+     VAddr indirect_args_addr{};
+     u32 num_counter_pairs{};
+     u64 pixel_counter{};
++    bool predication_skip{};      ///< Packets with the predicate bit are dropped
++    bool occlusion_begin_real{};  ///< The open occlusion query's begin was written as a real 0
+ 
+     struct ConstantEngine {
+         void Reset() {
 diff --git a/src/video_core/renderdoc.cpp b/src/video_core/renderdoc.cpp
 index 0fe7e9fc..1f83bcc7 100644
 --- a/src/video_core/renderdoc.cpp
@@ -246,6 +393,250 @@ index 0fe7e9fc..1f83bcc7 100644
  
      if (capture_state == CaptureState::Triggered) {
          rdoc_api->StartFrameCapture(nullptr, nullptr);
+diff --git a/src/video_core/renderer_vulkan/vk_instance.cpp b/src/video_core/renderer_vulkan/vk_instance.cpp
+index b3acd6e9..188f9134 100644
+--- a/src/video_core/renderer_vulkan/vk_instance.cpp
++++ b/src/video_core/renderer_vulkan/vk_instance.cpp
+@@ -412,6 +412,7 @@ bool Instance::CreateDevice() {
+                 .wideLines = features.wideLines,
+                 .multiViewport = features.multiViewport,
+                 .samplerAnisotropy = features.samplerAnisotropy,
++                .occlusionQueryPrecise = features.occlusionQueryPrecise,
+                 .vertexPipelineStoresAndAtomics = features.vertexPipelineStoresAndAtomics,
+                 .fragmentStoresAndAtomics = features.fragmentStoresAndAtomics,
+                 .shaderImageGatherExtended = features.shaderImageGatherExtended,
+diff --git a/src/video_core/renderer_vulkan/vk_instance.h b/src/video_core/renderer_vulkan/vk_instance.h
+index 621f020c..03e121d6 100644
+--- a/src/video_core/renderer_vulkan/vk_instance.h
++++ b/src/video_core/renderer_vulkan/vk_instance.h
+@@ -142,6 +142,16 @@ public:
+         return shader_stencil_export;
+     }
+ 
++    /// Returns true when query pools can be reset from the host (Vulkan 1.2 hostQueryReset)
++    bool IsHostQueryResetSupported() const {
++        return vk12_features.hostQueryReset;
++    }
++
++    /// Returns true when occlusion queries can return exact sample counts
++    bool IsOcclusionQueryPreciseSupported() const {
++        return features.occlusionQueryPrecise;
++    }
++
+     /// Returns true when VK_EXT_depth_clip_control is supported
+     bool IsDepthClipControlSupported() const {
+         return depth_clip_control;
+diff --git a/src/video_core/renderer_vulkan/vk_rasterizer.cpp b/src/video_core/renderer_vulkan/vk_rasterizer.cpp
+index 6a1a4a5c..703f0d07 100644
+--- a/src/video_core/renderer_vulkan/vk_rasterizer.cpp
++++ b/src/video_core/renderer_vulkan/vk_rasterizer.cpp
+@@ -55,6 +55,23 @@ Rasterizer::Rasterizer(const Instance& instance_, Scheduler& scheduler_, Runtime
+ 
+ Rasterizer::~Rasterizer() = default;
+ 
++/// True for a stencil clear (DB_RENDER_CONTROL.STENCIL_CLEAR_ENABLE) whose stencil write mask
++/// selects only some of the bits.
++static bool IsMaskedStencilClear(const AmdGpu::Regs& regs) {
++    if (!regs.depth_render_control.stencil_clear_enable || !regs.depth_control.stencil_enable ||
++        !regs.depth_buffer.StencilValid()) {
++        return false;
++    }
++    const u8 mask = regs.stencil_ref_front.stencil_write_mask;
++    static u32 seen[8]{};
++    if ((seen[mask >> 5] & (1u << (mask & 31))) == 0) {
++        seen[mask >> 5] |= 1u << (mask & 31);
++        LOG_INFO(Render_Vulkan, "stencil clear with write mask {:#x}, clear value {:#x}", mask,
++                 regs.stencil_clear);
++    }
++    return mask != 0xFF && mask != 0;
++}
++
+ bool Rasterizer::FilterDraw() {
+     const auto& regs = liverpool->regs;
+     if (regs.color_control.mode == AmdGpu::ColorControl::OperationMode::EliminateFastClear) {
+@@ -222,6 +239,15 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
+     const auto cmdbuf = scheduler.CommandBuffer();
+     cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline->Handle());
+ 
++    // An open occlusion query counts the samples of its first draw. Begin and end are both
++    // inside the render pass instance the draw is in.
++    const bool counted = occlusion_active != 0 && !occlusion_counted && occlusion_pool;
++    if (counted) {
++        cmdbuf.beginQuery(*occlusion_pool, occlusion_slot,
++                          instance.IsOcclusionQueryPreciseSupported()
++                              ? vk::QueryControlFlagBits::ePrecise
++                              : vk::QueryControlFlags{});
++    }
+     if (is_indexed) {
+         cmdbuf.drawIndexed(regs.num_indices, regs.num_instances.NumInstances(), 0,
+                            s32(vertex_offset), instance_offset);
+@@ -229,6 +255,10 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
+         cmdbuf.draw(regs.num_indices, regs.num_instances.NumInstances(), vertex_offset,
+                     instance_offset);
+     }
++    if (counted) {
++        cmdbuf.endQuery(*occlusion_pool, occlusion_slot);
++        occlusion_counted = true;
++    }
+     DebugState.IncDrawCall();
+ 
+     ResetBindings(false);
+@@ -407,6 +437,69 @@ void Rasterizer::OnFence() {
+     texture_cache.ProcessDownloadImages();
+ }
+ 
++void Rasterizer::BeginOcclusionQuery(VAddr results) {
++    if (!instance.IsHostQueryResetSupported()) {
++        return;
++    }
++    if (!occlusion_pool) {
++        auto [pool_result, pool] = instance.GetDevice().createQueryPoolUnique({
++            .queryType = vk::QueryType::eOcclusion,
++            .queryCount = NumOcclusionQueries,
++        });
++        if (pool_result != vk::Result::eSuccess) {
++            return;
++        }
++        occlusion_pool = std::move(pool);
++        instance.GetDevice().resetQueryPool(*occlusion_pool, 0, NumOcclusionQueries);
++    }
++    PollOcclusionQueries();
++    if (occlusion_pending.size() >= NumOcclusionQueries - 1) {
++        // The oldest slot is about to be reused: its result is given up
++        occlusion_pending.pop_front();
++    }
++    occlusion_active = results;
++    occlusion_slot = occlusion_next;
++    occlusion_next = (occlusion_next + 1) % NumOcclusionQueries;
++    occlusion_counted = false;
++    instance.GetDevice().resetQueryPool(*occlusion_pool, occlusion_slot, 1);
++}
++
++void Rasterizer::EndOcclusionQuery(VAddr results) {
++    if (occlusion_active == 0) {
++        return;
++    }
++    if (occlusion_counted && results == occlusion_active) {
++        occlusion_pending.push_back({occlusion_active, occlusion_slot});
++    }
++    // (a query without a draw - filtered out, or no pipeline - leaves the last result as it is)
++    occlusion_active = 0;
++    occlusion_counted = false;
++}
++
++void Rasterizer::PollOcclusionQueries() {
++    while (!occlusion_pending.empty()) {
++        const auto& query = occlusion_pending.front();
++        std::array<u64, 2> data{};
++        const auto result = instance.GetDevice().getQueryPoolResults(
++            *occlusion_pool, query.slot, 1, sizeof(data), data.data(), sizeof(data),
++            vk::QueryResultFlagBits::e64 | vk::QueryResultFlagBits::eWithAvailability);
++        if (result != vk::Result::eSuccess || data[1] == 0) {
++            break; // not executed yet; the later ones are not either
++        }
++        occlusion_results[query.results] = data[0];
++        occlusion_pending.pop_front();
++    }
++}
++
++std::optional<u64> Rasterizer::OcclusionResult(VAddr results) {
++    if (!occlusion_pool) {
++        return std::nullopt;
++    }
++    PollOcclusionQueries();
++    const auto it = occlusion_results.find(results);
++    return it != occlusion_results.end() ? std::optional<u64>{it->second} : std::nullopt;
++}
++
+ bool Rasterizer::BindResources(const Pipeline* pipeline) {
+     if (IsComputeImageCopy(pipeline) || IsComputeMetaClear(pipeline) ||
+         IsComputeImageClear(pipeline)) {
+@@ -1095,7 +1188,10 @@ RenderState Rasterizer::BeginRendering(const GraphicsPipeline* pipeline) {
+             (regs.depth_render_control.depth_clear_enable && regs.depth_control.depth_enable &&
+              regs.depth_control.depth_write_enable) ||
+             texture_cache.IsMetaCleared(htile_address, slice);
+-        const bool is_stencil_clear = regs.depth_render_control.stencil_clear_enable;
++        // A stencil clear under a partial write mask clears those bits only: it is done by
++        // the draw itself (UpdateDynamicState), not by clearing the whole attachment.
++        const bool is_stencil_clear =
++            regs.depth_render_control.stencil_clear_enable && !IsMaskedStencilClear(regs);
+         texture_cache.TouchMeta(htile_address, slice, false);
+         ASSERT(desc.view_info.range.extent.levels == 1 && !image.binding.needs_rebind);
+ 
+@@ -1531,6 +1627,23 @@ void Rasterizer::UpdateDepthStencilState() const {
+         dynamic_state.SetStencilWriteMasks(!stencil_clear ? front.stencil_write_mask : 0U,
+                                            !stencil_clear ? back.stencil_write_mask : 0U);
+         dynamic_state.SetStencilCompareMasks(front.stencil_mask, back.stencil_mask);
++        if (IsMaskedStencilClear(regs)) {
++            // Destiny 1 keeps per-pixel material bits in the stencil buffer and clears only its
++            // light-volume bits before the lighting passes, which read the material bits back
++            // as a texture. Clearing the attachment lost them (the menu's Guardian came out
++            // unlit). The covered pixels get the clear value in the masked bits.
++            const StencilOps clear_ops{
++                .fail_op = vk::StencilOp::eReplace,
++                .pass_op = vk::StencilOp::eReplace,
++                .depth_fail_op = vk::StencilOp::eReplace,
++                .compare_op = vk::CompareOp::eAlways,
++            };
++            dynamic_state.SetStencilOps(clear_ops, clear_ops);
++            dynamic_state.SetStencilReferences(regs.stencil_clear & 0xFFu,
++                                               regs.stencil_clear & 0xFFu);
++            dynamic_state.SetStencilWriteMasks(front.stencil_write_mask,
++                                               front.stencil_write_mask);
++        }
+     }
+ }
+ 
+diff --git a/src/video_core/renderer_vulkan/vk_rasterizer.h b/src/video_core/renderer_vulkan/vk_rasterizer.h
+index e01715c5..6189fb4b 100644
+--- a/src/video_core/renderer_vulkan/vk_rasterizer.h
++++ b/src/video_core/renderer_vulkan/vk_rasterizer.h
+@@ -3,6 +3,9 @@
+ 
+ #pragma once
+ 
++#include <unordered_map>
++#include <optional>
++#include <deque>
+ #include "common/recursive_lock.h"
+ #include "common/shared_first_mutex.h"
+ #include "video_core/buffer_cache/buffer_cache.h"
+@@ -84,6 +87,13 @@ public:
+     void OnSubmit();
+     void OnFence();
+ 
++    /// Occlusion queries (ZPASS_DONE PixelPipeStatDump events). A query is identified by the
++    /// guest address of its results; the first draw between begin and end is counted.
++    void BeginOcclusionQuery(VAddr results);
++    void EndOcclusionQuery(VAddr results);
++    /// Sample count of the most recent FINISHED query at `results`; nullopt when none is known.
++    std::optional<u64> OcclusionResult(VAddr results);
++
+     PipelineCache& GetPipelineCache() {
+         return pipeline_cache;
+     }
+@@ -135,6 +145,21 @@ private:
+ private:
+     friend class VideoCore::BufferCache;
+ 
++    void PollOcclusionQueries();
++
++    static constexpr u32 NumOcclusionQueries = 8192;
++    struct PendingOcclusionQuery {
++        VAddr results;
++        u32 slot;
++    };
++    vk::UniqueQueryPool occlusion_pool;
++    std::deque<PendingOcclusionQuery> occlusion_pending;
++    std::unordered_map<VAddr, u64> occlusion_results;
++    VAddr occlusion_active{};  ///< Results address of the query that is open, 0 when none
++    u32 occlusion_slot{};      ///< Its slot in the pool
++    u32 occlusion_next{};      ///< Next slot to hand out
++    bool occlusion_counted{};  ///< The open query has had its draw
++
+     const Instance& instance;
+     Scheduler& scheduler;
+     Runtime& runtime;
 diff --git a/src/video_core/renderer_vulkan/vk_runtime.cpp b/src/video_core/renderer_vulkan/vk_runtime.cpp
 index 7e1c025a..964278cb 100644
 --- a/src/video_core/renderer_vulkan/vk_runtime.cpp

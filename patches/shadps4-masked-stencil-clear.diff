@@ -1,0 +1,64 @@
+diff --git a/src/video_core/renderer_vulkan/vk_rasterizer.cpp b/src/video_core/renderer_vulkan/vk_rasterizer.cpp
+index 3af11521..703f0d07 100644
+--- a/src/video_core/renderer_vulkan/vk_rasterizer.cpp
++++ b/src/video_core/renderer_vulkan/vk_rasterizer.cpp
+@@ -55,6 +55,23 @@ Rasterizer::Rasterizer(const Instance& instance_, Scheduler& scheduler_, Runtime
+ 
+ Rasterizer::~Rasterizer() = default;
+ 
++/// True for a stencil clear (DB_RENDER_CONTROL.STENCIL_CLEAR_ENABLE) whose stencil write mask
++/// selects only some of the bits.
++static bool IsMaskedStencilClear(const AmdGpu::Regs& regs) {
++    if (!regs.depth_render_control.stencil_clear_enable || !regs.depth_control.stencil_enable ||
++        !regs.depth_buffer.StencilValid()) {
++        return false;
++    }
++    const u8 mask = regs.stencil_ref_front.stencil_write_mask;
++    static u32 seen[8]{};
++    if ((seen[mask >> 5] & (1u << (mask & 31))) == 0) {
++        seen[mask >> 5] |= 1u << (mask & 31);
++        LOG_INFO(Render_Vulkan, "stencil clear with write mask {:#x}, clear value {:#x}", mask,
++                 regs.stencil_clear);
++    }
++    return mask != 0xFF && mask != 0;
++}
++
+ bool Rasterizer::FilterDraw() {
+     const auto& regs = liverpool->regs;
+     if (regs.color_control.mode == AmdGpu::ColorControl::OperationMode::EliminateFastClear) {
+@@ -1171,7 +1188,10 @@ RenderState Rasterizer::BeginRendering(const GraphicsPipeline* pipeline) {
+             (regs.depth_render_control.depth_clear_enable && regs.depth_control.depth_enable &&
+              regs.depth_control.depth_write_enable) ||
+             texture_cache.IsMetaCleared(htile_address, slice);
+-        const bool is_stencil_clear = regs.depth_render_control.stencil_clear_enable;
++        // A stencil clear under a partial write mask clears those bits only: it is done by
++        // the draw itself (UpdateDynamicState), not by clearing the whole attachment.
++        const bool is_stencil_clear =
++            regs.depth_render_control.stencil_clear_enable && !IsMaskedStencilClear(regs);
+         texture_cache.TouchMeta(htile_address, slice, false);
+         ASSERT(desc.view_info.range.extent.levels == 1 && !image.binding.needs_rebind);
+ 
+@@ -1607,6 +1627,23 @@ void Rasterizer::UpdateDepthStencilState() const {
+         dynamic_state.SetStencilWriteMasks(!stencil_clear ? front.stencil_write_mask : 0U,
+                                            !stencil_clear ? back.stencil_write_mask : 0U);
+         dynamic_state.SetStencilCompareMasks(front.stencil_mask, back.stencil_mask);
++        if (IsMaskedStencilClear(regs)) {
++            // Destiny 1 keeps per-pixel material bits in the stencil buffer and clears only its
++            // light-volume bits before the lighting passes, which read the material bits back
++            // as a texture. Clearing the attachment lost them (the menu's Guardian came out
++            // unlit). The covered pixels get the clear value in the masked bits.
++            const StencilOps clear_ops{
++                .fail_op = vk::StencilOp::eReplace,
++                .pass_op = vk::StencilOp::eReplace,
++                .depth_fail_op = vk::StencilOp::eReplace,
++                .compare_op = vk::CompareOp::eAlways,
++            };
++            dynamic_state.SetStencilOps(clear_ops, clear_ops);
++            dynamic_state.SetStencilReferences(regs.stencil_clear & 0xFFu,
++                                               regs.stencil_clear & 0xFFu);
++            dynamic_state.SetStencilWriteMasks(front.stencil_write_mask,
++                                               front.stencil_write_mask);
++        }
+     }
+ }
+ 
