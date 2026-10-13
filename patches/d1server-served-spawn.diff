@@ -185,7 +185,7 @@ index c535359..b7876d0 100644
                  for e in events {
                      // ⭐⭐ The heartbeat path used to print EVERY event at INFO, including the
 diff --git a/d1-server/crates/d1-activity-host/src/main.rs b/d1-server/crates/d1-activity-host/src/main.rs
-index d6bf57f..55df4e9 100644
+index d6bf57f..c6c240f 100644
 --- a/d1-server/crates/d1-activity-host/src/main.rs
 +++ b/d1-server/crates/d1-activity-host/src/main.rs
 @@ -443,8 +443,13 @@ fn main() -> anyhow::Result<()> {
@@ -371,7 +371,7 @@ index d6bf57f..55df4e9 100644
                      }
                      i.set_host_heartbeat(std::time::Duration::from_millis(heartbeat_ms));
                      i
-@@ -593,3 +693,205 @@ fn main() -> anyhow::Result<()> {
+@@ -593,3 +693,233 @@ fn main() -> anyhow::Result<()> {
          }
      }
  }
@@ -501,6 +501,34 @@ index d6bf57f..55df4e9 100644
 +                .collect()
 +        })
 +        .unwrap_or_default();
++    // ⭐ `D1_AH_SENSOR_SLOT_VALUE=<group hex>:<sub>:<tag hex>:<image file>[,...]`: ONE record
++    // carries this value from the area's first frame on (wins over KIND_VALUE). Used to serve a
++    // scripted object in its mission state at arrival - e.g. the gate into the Wall's dark room
++    // already removed, instead of a script opening it once the host's arrival frames are over.
++    if let Ok(spec) = std::env::var("D1_AH_SENSOR_SLOT_VALUE") {
++        for item in spec.split(',') {
++            let f: Vec<&str> = item.splitn(4, ':').collect();
++            let parsed = match f.as_slice() {
++                [g, sub, t, path] => (|| {
++                    Some((
++                        u32::from_str_radix(g.trim().trim_start_matches("0x"), 16).ok()?,
++                        sub.trim().parse::<i16>().ok()?,
++                        u32::from_str_radix(t.trim().trim_start_matches("0x"), 16).ok()?,
++                        std::fs::read(path.trim()).ok()?,
++                    ))
++                })(),
++                _ => None,
++            };
++            let Some((group, sub, tag, image)) = parsed else {
++                tracing::error!("⛔ D1_AH_SENSOR_SLOT_VALUE: cannot use `{item}` (want group:sub:tag:file)");
++                continue;
++            };
++            for e in out.iter_mut().filter(|e| e.name_hash == group && e.name_sub == sub) {
++                e.value = Some((tag, image.clone()));
++                tracing::info!("⭐ D1_AH_SENSOR_SLOT_VALUE: {group:08x}:{sub} carries a {}-byte value of {tag:#010x}", image.len());
++            }
++        }
++    }
 +    if let Ok(spec) = std::env::var("D1_AH_SENSOR_KIND_VALUE") {
 +        for item in spec.split(',') {
 +            if item.split(':').next().and_then(|k| k.trim().parse::<u8>().ok()).is_some_and(|k| skipped.contains(&k)) {
@@ -684,7 +712,7 @@ index 4e17610..27f1d72 100644
      pub fn pah_region_id(&self) -> u32 {
          let o = Self::PAH_REGIONS + Self::PAH_REGION_ID;
 diff --git a/d1-server/crates/d1-activity-host/src/state.rs b/d1-server/crates/d1-activity-host/src/state.rs
-index 891ceb8..0dfbb6f 100644
+index 891ceb8..694881a 100644
 --- a/d1-server/crates/d1-activity-host/src/state.rs
 +++ b/d1-server/crates/d1-activity-host/src/state.rs
 @@ -171,6 +171,8 @@ pub struct ActivityInstance {
@@ -696,7 +724,7 @@ index 891ceb8..0dfbb6f 100644
      /// ⭐⭐ The bubble count published at `global_activity_state+0x10` (and the `0xFF` unchosen
      /// bytes at `+0x14`). `FUN_002A0320` runs right after the checksum passes and requires this to
      /// equal the world's scenario bubble count (`orbit` = 16). `0` = every run to date =
-@@ -222,8 +224,32 @@ pub struct ActivityInstance {
+@@ -222,8 +224,34 @@ pub struct ActivityInstance {
      /// content record exists**, and the applier drops it silently (task #4) - so a repeating send
      /// is how at least one copy arrives after the world is resident.
      sensor_repeat: Option<Duration>,
@@ -713,6 +741,8 @@ index 891ceb8..0dfbb6f 100644
 +    /// ⭐ `D1_AH_SENSOR_INJECT_DIR`: every `*.udt5` file that appears here is sent to the client
 +    /// as one udt-5 `sensor_auth_update` payload and renamed `*.sent`. Built with
 +    /// `d1-oracle` example `sensor_frame`. A live experiment channel - off unless set.
++    /// The client has sent `free_entity_indices` at least once. See `RequestStateRefresh`.
++    client_pool_settled: bool,
 +    inject_dir: Option<std::path::PathBuf>,
 +    /// ⭐ `D1_AH_INCIDENT_READY_DIR`: answers to player-trigger incidents, prepared ahead of
 +    /// time. See [`Self::incident_answers`].
@@ -729,7 +759,7 @@ index 891ceb8..0dfbb6f 100644
  }
  
  impl ActivityInstance {
-@@ -306,6 +332,7 @@ impl ActivityInstance {
+@@ -306,6 +334,7 @@ impl ActivityInstance {
              // 0 is what every run so far sent, and naming what 0 means is the point.
              activity_index: 0,
              activity_checksum: 0,
@@ -737,7 +767,7 @@ index 891ceb8..0dfbb6f 100644
              bubble_count: 0,
              bubble_chosen: Vec::new(),
              pah_region: None,
-@@ -320,6 +347,15 @@ impl ActivityInstance {
+@@ -320,6 +349,16 @@ impl ActivityInstance {
              sensor_sent: false,
              sensors_sent: 0,
              sensor_repeat: None,
@@ -745,6 +775,7 @@ index 891ceb8..0dfbb6f 100644
 +            sensor_burst_base: 0,
 +            sensor_follow_max: None,
 +            current_region: 0,
++            client_pool_settled: false,
 +            inject_dir: std::env::var_os("D1_AH_SENSOR_INJECT_DIR").map(std::path::PathBuf::from),
 +            incident_ready_dir: std::env::var_os("D1_AH_INCIDENT_READY_DIR").map(std::path::PathBuf::from),
 +            bubble_sensor_payloads: std::collections::BTreeMap::new(),
@@ -753,7 +784,7 @@ index 891ceb8..0dfbb6f 100644
              sensor_last_sent: None,
          }
      }
-@@ -435,6 +471,137 @@ impl ActivityInstance {
+@@ -435,6 +474,137 @@ impl ActivityInstance {
          self.sensor_repeat = Some(every);
      }
  
@@ -891,7 +922,7 @@ index 891ceb8..0dfbb6f 100644
      /// ⭐⭐ The udt-5 `sensor_auth_update`, sent **once** after the instance reaches [`Live`]
      /// (or on an interval, in [`Self::set_sensor_repeat`] mode).
      ///
-@@ -462,6 +629,11 @@ impl ActivityInstance {
+@@ -462,6 +632,11 @@ impl ActivityInstance {
              }
              // Repeat mode: pace on the interval since the last send.
              Some(every) => {
@@ -903,7 +934,7 @@ index 891ceb8..0dfbb6f 100644
                  if let Some(last) = self.sensor_last_sent {
                      if now.saturating_duration_since(last) < every {
                          return None;
-@@ -469,7 +641,13 @@ impl ActivityInstance {
+@@ -469,7 +644,13 @@ impl ActivityInstance {
                  }
              }
          }
@@ -918,7 +949,7 @@ index 891ceb8..0dfbb6f 100644
          self.sensor_sent = true;
          self.sensor_last_sent = Some(now);
          self.sensors_sent += 1;
-@@ -510,6 +688,7 @@ impl ActivityInstance {
+@@ -510,6 +691,7 @@ impl ActivityInstance {
          s.set_activity_index(self.activity_index);
          // ⭐⭐ The field that aborts rung 33's world transition when it disagrees with content.
          s.set_activity_checksum(self.activity_checksum);
@@ -926,7 +957,7 @@ index 891ceb8..0dfbb6f 100644
          // ⭐⭐ The bubble count + unchosen bytes that FUN_002A0320 validates right after. Bounded
          // to the 64-byte field; a too-large count is a config error, so publish what we can and let
          // the loud "bubble count mismatch" name a wrong number rather than silently truncating.
-@@ -518,6 +697,20 @@ impl ActivityInstance {
+@@ -518,6 +700,20 @@ impl ActivityInstance {
          // field, so order is load-bearing. An all-`0xFF` blob passes rung 33 and then UNREGISTERS
          // every slice-set region, which is rung 34's `error.sstm_slice_not_found`.
          let _ = s.set_bubble_chosen(&self.bubble_chosen);
@@ -947,7 +978,7 @@ index 891ceb8..0dfbb6f 100644
          AhPush::new(self.ah_id, AhMessage::GlobalActivityState(s))
      }
  
-@@ -586,6 +779,23 @@ impl ActivityInstance {
+@@ -586,6 +782,23 @@ impl ActivityInstance {
          // the operator reads it; every re-publish after it logs at DEBUG, because a refresh every
          // few seconds repeating the same receipt turns the run log into noise and hides the
          // warnings. The condition is the join/refresh discriminator we already track.
@@ -971,7 +1002,48 @@ index 891ceb8..0dfbb6f 100644
          match self.pah_region {
              Some((region, peer, token)) => match m.set_pah_region(region, peer, token) {
                  Ok(()) if first => tracing::info!(
-@@ -817,13 +1027,71 @@ impl ActivityInstance {
+@@ -723,6 +936,7 @@ impl ActivityInstance {
+             }
+             ClientMessage::FreeEntityIndices(mask) => {
+                 self.entities.free(mask);
++                self.client_pool_settled = true;
+                 Vec::new()
+             }
+ 
+@@ -752,13 +966,27 @@ impl ActivityInstance {
+             // guard that stops the *join* from repeating them.
+             ClientMessage::RequestStateRefresh { .. } => {
+                 self.state_refreshes += 1;
+-                let mut out = vec![
+-                    AhPush::new(
++                // ⚠ HYPOTHESIS UNDER TEST (2026-10-13), not an established fact: once the client
++                // has handed indices back (`free_entity_indices`, about 7 s into every session)
++                // it runs its own pool, and what is still "granted" here includes indices it is
++                // USING. Re-sending that mask on every later refresh (each area switch) may put
++                // in-use indices back among its free ones - two entities on one index, and the
++                // stale-reference pass later finds an entity whose index maps to slot -1
++                // (crash 0xBBDEDE). So the grant is not repeated after the first free.
++                // Default: repeat (unchanged); `D1_AH_REFRESH_SLOTS=0` = the experiment.
++                // Opt-in until it is shown to matter: D1_AH_REFRESH_SLOTS=0 stops the repeat.
++                let repeat_grant = !self.client_pool_settled
++                    || std::env::var("D1_AH_REFRESH_SLOTS").map(|v| v != "0").unwrap_or(true);
++                let mut out = Vec::new();
++                if repeat_grant {
++                    out.push(AhPush::new(
+                         recipient,
+                         AhMessage::EntitySlotsAllocated(self.entities.granted().clone()),
+-                    ),
+-                    self.publish_activity_state(),
+-                ];
++                    ));
++                } else {
++                    tracing::info!("state refresh: entity slot grant NOT repeated (the client has freed indices)");
++                }
++                out.push(self.publish_activity_state());
+                 // The membership stays an ECHO. With no stored request there is nothing to echo
+                 // and the push is lost rather than fabricated - the same rule as the join.
+                 //
+@@ -817,13 +1045,71 @@ impl ActivityInstance {
              //
              // Accepted and recorded, not acted on. A stub with one peer has nothing to reserve
              // against, and `43 reservations_failed` is for failures we cannot have.
@@ -1045,7 +1117,7 @@ index 891ceb8..0dfbb6f 100644
      /// Advance the replication epoch. `[C]` a `u8`; the wire payload is `{u8 epoch, u8 suppress}`.
      ///
      /// Nothing in a stub needs to call this - it exists because the epoch is authoritative state
-@@ -894,6 +1162,13 @@ impl ActivityInstance {
+@@ -894,6 +1180,13 @@ impl ActivityInstance {
          self.activity_checksum = checksum;
      }
  
