@@ -96,7 +96,8 @@ DESTINATIONS = {
              "D1_AH_SENSOR_KIND_RESEQ=4", "D1_AH_SENSOR_KIND_SKIP=2@3", "D1_AH_SENSOR_FOLLOW_MAX=3",
              "D1_AH_SENSOR_REPEAT_MAX=3",
              # the gate into the Wall's dark room is already open when the player gets there
-             "D1_AH_SENSOR_SLOT_VALUE=" + ",".join("fc0e45a3:%d:808007d9:%s" % (sub, os.path.join(ROOT, "capture", "values", "gate_open.bin")) for sub in (5, 6))],
+             "D1_AH_SENSOR_SLOT_VALUE=" + ",".join("fc0e45a3:%d:808007d9:%s" % (sub, os.path.join(ROOT, "capture", "values", "gate_open.bin")) for sub in (5, 6))
+             + ",fc0e45a3:95:80800868:" + os.path.join(ROOT, "capture", "values", "member_exists.bin")],
         launch="launch_patrol.py"),
     # The Wall with its scripted objects but NO squads: a quiet room for object-state tests.
     "guardian_rises_b3_quiet": dict(

@@ -712,7 +712,7 @@ index 4e17610..27f1d72 100644
      pub fn pah_region_id(&self) -> u32 {
          let o = Self::PAH_REGIONS + Self::PAH_REGION_ID;
 diff --git a/d1-server/crates/d1-activity-host/src/state.rs b/d1-server/crates/d1-activity-host/src/state.rs
-index 891ceb8..694881a 100644
+index 891ceb8..691bd31 100644
 --- a/d1-server/crates/d1-activity-host/src/state.rs
 +++ b/d1-server/crates/d1-activity-host/src/state.rs
 @@ -171,6 +171,8 @@ pub struct ActivityInstance {
@@ -1010,7 +1010,7 @@ index 891ceb8..694881a 100644
                  Vec::new()
              }
  
-@@ -752,13 +966,27 @@ impl ActivityInstance {
+@@ -752,13 +966,28 @@ impl ActivityInstance {
              // guard that stops the *join* from repeating them.
              ClientMessage::RequestStateRefresh { .. } => {
                  self.state_refreshes += 1;
@@ -1024,9 +1024,10 @@ index 891ceb8..694881a 100644
 +                // stale-reference pass later finds an entity whose index maps to slot -1
 +                // (crash 0xBBDEDE). So the grant is not repeated after the first free.
 +                // Default: repeat (unchanged); `D1_AH_REFRESH_SLOTS=0` = the experiment.
-+                // Opt-in until it is shown to matter: D1_AH_REFRESH_SLOTS=0 stops the repeat.
++                // Default since 2026-10-13: not repeated (crashes at area switches, spawns and weapon swaps
++                // all hit the stale-reference pass). D1_AH_REFRESH_SLOTS=1 = the old repeat.
 +                let repeat_grant = !self.client_pool_settled
-+                    || std::env::var("D1_AH_REFRESH_SLOTS").map(|v| v != "0").unwrap_or(true);
++                    || std::env::var("D1_AH_REFRESH_SLOTS").map(|v| v == "1").unwrap_or(false);
 +                let mut out = Vec::new();
 +                if repeat_grant {
 +                    out.push(AhPush::new(
@@ -1043,7 +1044,7 @@ index 891ceb8..694881a 100644
                  // The membership stays an ECHO. With no stored request there is nothing to echo
                  // and the push is lost rather than fabricated - the same rule as the join.
                  //
-@@ -817,13 +1045,71 @@ impl ActivityInstance {
+@@ -817,13 +1046,71 @@ impl ActivityInstance {
              //
              // Accepted and recorded, not acted on. A stub with one peer has nothing to reserve
              // against, and `43 reservations_failed` is for failures we cannot have.
@@ -1117,7 +1118,7 @@ index 891ceb8..694881a 100644
      /// Advance the replication epoch. `[C]` a `u8`; the wire payload is `{u8 epoch, u8 suppress}`.
      ///
      /// Nothing in a stub needs to call this - it exists because the epoch is authoritative state
-@@ -894,6 +1180,13 @@ impl ActivityInstance {
+@@ -894,6 +1181,13 @@ impl ActivityInstance {
          self.activity_checksum = checksum;
      }
  

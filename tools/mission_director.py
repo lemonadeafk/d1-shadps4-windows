@@ -175,13 +175,14 @@ _OPENING = [
 _ROOM = [
     # the Wall's own area: the host's frames for it (3 x 5 s) put every value back to its
     # default, so wait them out; then the Ghost is there
+    # The Ghost (member 95) and the open gate are served in the area's own first frame
+    # (D1_AH_SENSOR_SLOT_VALUE), so nothing here waits for the arrival frames: the line and
+    # the power-up start at once (light channels are not reset by those frames - they carry no
+    # state entries). Only the objective, which they DO reset, waits them out.
     ((BREACH, 4, 0), [
-        (16, "objective", 7, ACTIVE, "objective: FIND A WEAPON (after the area switch)"),
-        (0, "spawn", BREACH, "the Ghost appears", [95]),
-        _line(1, 9, "o2_10"),
-        # the user walks straight to the gate (390,-794) and does not cross 120 before it
-        # (run PLAY2), so the power-up follows the Ghost's first line
-        (5, "fire", _pt(120), "the power-up starts"),
+        _line(0, 9, "o2_10"),
+        (2, "fire", _pt(120), "the power-up starts"),
+        (14, "objective", 7, ACTIVE, "objective: FIND A WEAPON (after the area switch)"),
     ]),
     # pt_nux_first_fallen_wall_climb: crossed in the corridor, around (356,-796) (run EV2; the
     # user's log shows it later only because it was re-armed late).
@@ -193,16 +194,16 @@ _ROOM = [
     # is the Ghost's doing, so it runs from here on short gaps (was 75 s of standing around).
     (_pt(120), [
         (0, "perf", BREACH, 125, "ghost_perf.bin", "the Ghost flies to the power control with its torch"),
-        _line(1, 11, "o2_30"),
-        _line(4, 12, "o2_35"),
-        (3, "state", BREACH, "0", (0.0, 0.0, 0.25), "power 25%"),
-        (0.7, "state", BREACH, "0", (0.0, 0.0, 0.5), "power 50%"),
-        (0.7, "state", BREACH, "0", (0.0, 0.0, 0.75), "power 75%"),
-        (0.7, "state", BREACH, "0,1,4,8", (0.0, 0.0, 1.0), "power on"),
-        (0.5, "seq", DIALOGUE, 0, "seq_m_cue1"),
-        _line(0.5, 13, "o2_36"),
-        (3, "gone", BREACH, "5,6", "the gate to the rifle opens"),
-        _line(1, 14, "o2_40"),
+        _line(0.5, 11, "o2_30"),
+        (1, "state", BREACH, "0", (0.0, 0.0, 0.25), "power 25%"),
+        (0.5, "state", BREACH, "0", (0.0, 0.0, 0.5), "power 50%"),
+        (0.5, "state", BREACH, "0", (0.0, 0.0, 0.75), "power 75%"),
+        (0.5, "state", BREACH, "0,1,4,8", (0.0, 0.0, 1.0), "power on"),
+        (0.3, "seq", DIALOGUE, 0, "seq_m_cue1"),
+        _line(0.3, 13, "o2_36"),
+        (0, "gone", BREACH, "5,6", "the gate (served open already)"),
+        _line(3, 12, "o2_35"),
+        _line(6, 14, "o2_40"),
     ]),
     ((ACTIVITY, 29, 37), [_line(0, 15, "o2_50")]),                        # pf_104a_pwr trigger (407,-788)
     ((ACTIVITY, 29, 34), [                                                # obj_investigate_wall trigger (410,-793)
