@@ -2174,3 +2174,27 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   the post-game phase ("mission ends: post game"), using the activity INDEX the host publishes.
 - Missing for the loop: A Guardian Rises has no ending yet (its script stops at the Divide), so a
   new Guardian cannot complete it; the flag-132 check (one launch, the user names the node).
+
+## 91. A Guardian Rises past the Wall; encounter objectives (2026-10-13 20:00, offline)
+- Highway world record names for all 22 bubbles (world_sensors D1_WS_DUMP, scratchpad hw_names.json):
+  bubble 12 = graveyard (9243dffb: sq_fallen_dropship_1-4/_tank + pilots 2:5/7/9/11/13,
+  sq_fallen_m0_drop_1/2/2_b/upgrade/exit_shanks/sniper/dropdown (+dreg 2:21), obj_fallen_m0 3:3,
+  o_ketch_gantry 4:0, o_graveyard_gating_nux 4:1, o_signal_flare 4:2, ci_ketch_arrival_cinematic 6:22,
+  triggers 29:23-32 pt_ketch_cue/ketch/drop_1/drop_2/bunker_ambush/drop_2_ambush/ketch_dropship(_2)/
+  exit_shanks/grenade_backup); bubble 13 = hangar (062dd95d: sq_m0_fallen_init(_b)/gating,
+  sq_ch1_fallen_on_playership_1-3, sq_m0_fallen_1/2 - NO member records; obj_m0_hangar_fallen 3:4,
+  o_hangar_gating_nux/exit 4:0/1, o_ship 4:2, o_ship_wires 4:3, obj_placement_m0_m05 4:13 / 33:14,
+  triggers 29:15-18 pt_grenade_reinforce/main_room/fallen_ship/fallen_backup).
+- The mission's objective chain (992bb471): 14 obj_goto_graveyard (trigger 29:38), 17 obj_m0_m04
+  (graveyard), 20 obj_m0_goto_hangar (29:40), 23 obj_m0_m04a (29:41), 26 obj_m0_m04b; incoming /
+  completion sequences 5:15-28; outro cinematic 6:29 cosmo_m0_phase04_outro.pf_105_cto.
+- Squads without member records (the hangar, most of the graveyard, Restoration's upper waves) cannot
+  be spawned by member values. ENCOUNTER OBJECTIVES (kind 3, value 0x808004FA, 28 B): setter
+  FUN_001C20B0 (setters.json #23) compares one byte per task (count at def+0x78) with rec+0x1E0 +
+  i*0x1A and on change restarts that task's state machine (FUN_000E6730 on rec+0x1C8 + 0x10 +
+  i*0x31); +0x18 u32 -> rec+0x450 (resets +0x454). The client reports the objective as 24 x 3-bit
+  states (all 1 once its squads register; Hive dome RES4). obj_hive_dome_a01's world record lists 26
+  hashes after it (+0xBC0). State meanings are not readable statically.
+- tools\encounter.py sets task states through the injection folder; frames encode for 41d61614:1
+  and 062dd95d:4. NEXT (needs a live session): states 0/2/3/4 on the Hive dome (do the frozen
+  acolytes move?) and on obj_m0_hangar_fallen (do the hangar Fallen appear?).
