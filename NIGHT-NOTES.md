@@ -2006,3 +2006,21 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   c_activity_script_value_component (mission counters / timers) - not cinematics. Cinematic
   batches: loaded only by initial_slice_set_loading / prologue_intro_loading, unloaded on
   entering in_world (764B20 with load 0, unload 6); nothing in-world reloads them that is known.
+
+## 85. The Ghost in the hand: what decides it (2026-10-13 13:00-13:35, runs WPN3, MRG2)
+- hwwatch.py takes a HOST address: base + eboot vaddr (base from live.py, e.g. 0x5060000);
+  with a bare vaddr it silently catches nothing (validated on FUN_001238D0 during an injection).
+- FUN_006676B0 (slot 0 of the vtable at 0x1996198) is the ONLY reader of the "weapons disabled"
+  option (name at [0x25BE630]; FUN_00117770 just initialises the names); it reads the merged
+  option table through FUN_00118860. Execution breakpoints, live: it does NOT run on a loadout
+  push; the option merge FUN_00416B20 does NOT run on a loadout push, on an options change with
+  global_activity_state re-published, or on the area switch into the Wall (region 112 -> 24).
+  Both belong to the activity start (and the player's spawn).
+- So: with the option on, no weapon objects are made at spawn and a later loadout cannot add
+  any (no hand, no Ghost, no rifle); with it off, weapon objects exist and an unusable or empty
+  one shows the open hand with the Ghost. The real opening most likely had the option on and a
+  real weapon pickup at the crate (c_action_impl_weapon_pickup needs a weapon object with
+  component 0x80802292); the crate's rifle in the content is a display only, and the client
+  creates weapon objects only for actors' gear. Not solvable from the server with what is known.
+- new_user_experience (kind 39, def 0x80cd0c35): 35 entries of {name hash, u32, u32, u32 1, u32},
+  all unset in the content - the server fills them; not linked to weapons as far as seen.
