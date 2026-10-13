@@ -545,7 +545,7 @@ def main():
             seq += 1
             if kind == "state":
                 _, _, group, subs, channels, name = step
-                img = object_state.image(seq, channels).hex()
+                img = object_state.image(seq, channels, snap=False).hex()     # animated
             else:
                 _, _, group, subs, name = step
                 img = object_state.image(seq, (0.0, 0.0, 0.0), exists=False).hex()

@@ -22,13 +22,15 @@ STATE_TAG = 0x8080279A
 BASE = os.path.join(os.path.dirname(HERE), "capture", "values", "object_exists.bin")
 
 
-def image(seq, channels, exists=True):
+def image(seq, channels, exists=True, snap=True):
+    """snap=False raises only each channel's set-counter: the object MOVES to the value
+    (its own animation and sound) instead of jumping there."""
     img = bytearray(open(BASE, "rb").read())
     img[0:4] = struct.pack("<I", seq)
     img[8] = 1 if exists else 0
     img[0x20:0x24] = struct.pack("<I", 1)                  # one typed entry
     img[0x30:0x34] = struct.pack("<I", STATE_TAG)
-    body = b"".join(struct.pack("<IIf", seq, seq, v) for v in channels)
+    body = b"".join(struct.pack("<IIf", seq, seq if snap else 0, v) for v in channels)
     img[0x40:0x40 + len(body)] = body
     return bytes(img)
 
