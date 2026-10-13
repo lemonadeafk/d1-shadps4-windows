@@ -1604,3 +1604,18 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   pf_104_res_fp) as the scene, i.e. started by the server - and section 47's blocker stands:
   no cinematic is registered in-world for them to find.
 - Banner with the right activity: not captured yet (the frame I got shows only "NEW MISSION").
+
+## 73. Equipping in under a second (2026-10-12 20:25, offline)
+- Where the 10 s went (31 tool runs per equip, timed): 5 s re-reading weapon patterns / stats
+  from the packages (art-arrangement show + oodle entry, 9 each), 4 s in two profile builds and
+  three profile decode / encode rounds, 1.6 s character + peer view.
+- tools\fast_equip.py: keep the three decoded objects in memory and PATCH them - the item's
+  0x40-byte equipment entry in character and peer view (+ perk and stat blocks for a weapon),
+  one SOID in the profile's equipped list - then encode the three in parallel. Each item's
+  entry is learned from an object in which it is worn: the served one for the equipped items,
+  one slow build per spare in the background when equip_service starts (11 s for the one
+  spare). Unknown item -> the old rebuild.
+- Offline: 0.43 s per equip (Fatebringer in, The Last Word back), and after swapping back the
+  character file is byte-identical to the served one. NOT run in a game yet.
+- What is left of the delay is the login server only looking for the swap file when the game
+  sends a keepalive; equip_service now logs how long that takes ("pushed N s later").

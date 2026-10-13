@@ -81,14 +81,19 @@ def run(*a):
     return r.stdout
 
 
-def build(equipped):
-    """Rebuild character / peer view / profile with `equipped` (SOIDs) worn; returns the folder."""
+def build(equipped, out=None):
+    """Rebuild character / peer view / profile with `equipped` (SOIDs) worn; returns the folder.
+
+    The slow, from-scratch way (about 10 s): tools\\fast_equip.py uses it once per spare item
+    to learn that item's equipment data, and it is the fallback for an item not learned yet."""
     os.makedirs(LIVE, exist_ok=True)
     full = view(equipped)
     cur = served()[1]
     if cur:         # a Guardian made in the creator: rebuilt in place, so the change is kept
-        new_guardian.assemble(cur[1], os.path.join(cur[1], "inventory"), cur[2], full)
-        return cur[1]
+        out = out or cur[1]
+        os.makedirs(out, exist_ok=True)
+        new_guardian.assemble(out, os.path.join(cur[1], "inventory"), cur[2], full)
+        return out
     # character and peer view refuse the emblem element (they take the emblem via --emblem)
     gear = os.path.join(LIVE, "view-gear")
     if os.path.isdir(gear):
@@ -162,6 +167,14 @@ def watch():
     print("watching", log, flush=True)
     equipped = []
     offset = 0
+    fast = None
+    try:                    # the quick way (tools\fast_equip.py); the rebuild below still works without it
+        import threading
+        import fast_equip
+        fast = fast_equip.Fast()
+        threading.Thread(target=fast.warm, daemon=True).start()
+    except (SystemExit, Exception) as e:
+        print("fast path unavailable:", e, flush=True)
     while True:
         if newest_run() != run_dir:
             return
@@ -183,14 +196,23 @@ def watch():
                 continue
             bucket = elements()[soid - BASE_SOID][0]
             equipped = [s for s in equipped if elements()[s - BASE_SOID][0] != bucket] + [soid]
-            build(equipped)
+            t0 = time.time()
+            lines, how = (fast.equip(soid) if fast else None), "patched"
+            if lines is None:
+                build(equipped)
+                lines, how = swap_lines(), "rebuilt"
             for stale in (SWAP_TRIGGER, os.path.splitext(SWAP_TRIGGER)[0] + ".done"):
                 if os.path.exists(stale):
                     os.remove(stale)
-            with open(SWAP_TRIGGER, "w") as f:
-                f.write(swap_lines())
-            print(time.strftime("%H:%M:%S"), "equipped %#x (%s)" % (soid, bucket), flush=True)
-        time.sleep(0.5)
+            with open(SWAP_TRIGGER + ".tmp", "w") as f:
+                f.write(lines)
+            os.replace(SWAP_TRIGGER + ".tmp", SWAP_TRIGGER)
+            print(time.strftime("%H:%M:%S"), "equipped %#x (%s) - %s in %.1f s" % (soid, bucket, how, time.time() - t0), flush=True)
+            t1 = time.time()            # the login server takes the file on the game's next keepalive
+            while os.path.exists(SWAP_TRIGGER) and time.time() - t1 < 15:
+                time.sleep(0.05)
+            print(time.strftime("%H:%M:%S"), "pushed %.1f s later" % (time.time() - t1), flush=True)
+        time.sleep(0.1)
 
 
 def main():
