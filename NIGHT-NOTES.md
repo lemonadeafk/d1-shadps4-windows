@@ -2237,3 +2237,20 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   sq_ch1_fallen_on_playership_1 etc.), a compiler step ("squad", group, sub, counts), the hangar
   and graveyard fights in A Guardian Rises and the upper waves in Restoration; and starting the
   hangar test in the right phase so the player spawns.
+
+## 94. Squad sizes; Restoration's waves and its real ending (2026-10-13 20:30, offline)
+- A squad record names its squad definition (u32 at +0x70); that names one composition (the other
+  0x80Cxxxxx tag); the composition's member count is the u16 at +0x20 (= +0x60): scare01 1,
+  basement thrall01 7, troopers01 3, wizard01 1 - all four match their authored members.
+  tools\squad_sizes.py -> capture\values\squad_sizes_80cb804b.json (374 squads, Restoration's
+  world) and squad_sizes_80cb800d.json (65, A Guardian Rises' world).
+- Compiler steps: ("squad", group, [subs], name) = squad value with +0x2C = slots and +0x30 = 1
+  per slot (section 93); ("countdown", seconds, name) = lifetime phase 6 with the lifetime_timer
+  base stepped once per second (the HUD redraws only on a changed value).
+- Restoration: pt_spawn_hive_intro02 adds 29/30 (basement troopers02, t2 thrall02);
+  pt_upper_knight_spawn 31; pt_upper_spawn01 the upper floor 32-35, 40-42 (+ the wizard);
+  pt_upper_rush01/02_spawn 36/37 and 38/39 with the wave announcement. The wizard's death: o2 done,
+  seq_m_outro, MISSION END 30 -> 0, post game (phase 7). User playtest RESTORATION (20:20): the
+  rest plays "pretty flawless"; the gate snaps open without its animation (low priority); the
+  basement acolytes still stand frozen; radar showed enemies the user could not see (the test's
+  upper waves, spawned before reaching them).

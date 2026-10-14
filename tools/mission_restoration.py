@@ -12,7 +12,8 @@ gate to the Lunar Complex"; the gate (dg_cosmo_dome_a_door01) opens on state cha
 the Hive behind it rushes out; a squad member's death is reported (cue "dead").
 
 Steps are the ones tools\mission_compile.py knows: ("objective", sub, state, name),
-("seq", group, sub, name), ("members", group, [subs], name), ("state", group, subs, channels,
+("seq", group, sub, name), ("members", group, [subs], name), ("squad", group, [subs], name),
+("countdown", seconds, name), ("phase", n, name), ("state", group, subs, channels,
 name), ("fire", cue, name). Which Ghost line belongs to which moment is read from the names
 (seq_d_o1_* = o1a, o2_* = o1b, o3_* = o1c) - the words are not known, the order is.
 """
@@ -38,6 +39,15 @@ SCARE02 = [10, 12, 14, 16]
 BASEMENT_THRALLS = [18, 19, 20, 21, 22, 23, 24]
 BASEMENT_TROOPERS = [26, 27, 28]
 WIZARD = 44
+# squads WITHOUT member records, spawned at their designed size (compiler step "squad", sizes from
+# capture\squad_sizes_80cb804b.json; NIGHT-NOTES 93-94). Which trigger brings which squad is read
+# from the names: basement second wave (troopers02, t2 thrall02), the basement knight, the upper
+# floor's front / back / t2 trooper, and the two rush waves.
+BASEMENT_WAVE_2 = [29, 30]          # sq_hive_basement_troopers02, sq_t2_hive_basement_thrall02
+KNIGHT = [31]                       # sq_t2_hive_basement_knight01
+UPPER = [32, 33, 34, 35, 40, 41, 42]    # upper_front01-03, t2_upper_trooper01, upper_back01/02, t2_upper_back02
+RUSH_1 = [36, 37]                   # upper_rush01, t2_upper_rush01
+RUSH_2 = [38, 39]                   # upper_rush02, t2_upper_rush02
 # ("dead" cues: a member's death report, see mission_compile.DEATH_BITS)
 
 
@@ -93,22 +103,30 @@ EVENT_SCRIPT = [
         WAVE,
         (0, "members", HIVE, BASEMENT_TROOPERS, "troopers in the basement"),
         (0, "members", HIVE, BASEMENT_THRALLS, "the basement thralls"),
+        (0, "squad", HIVE, BASEMENT_WAVE_2, "the basement's second wave"),
         line(1, "o2_s03"),
     ]),
     (pt(HIVE, 50), [(0, "fire", pt(HIVE, 49), "the basement (forced)")]),   # pt_spawn_hive_intro02_force
     (pt(HIVE, 52), [line(0, "o2_s04")]),               # pt_thrall_unfreeze
+    (pt(HIVE, 53), [(0, "squad", HIVE, KNIGHT, "a knight (sq_t2_hive_basement_knight01)")]),  # pt_upper_knight_spawn
+    (pt(HIVE, 54), [WAVE, (0, "squad", HIVE, RUSH_1, "the first rush")]),     # pt_upper_rush01_spawn
+    (pt(HIVE, 55), [WAVE, (0, "squad", HIVE, RUSH_2, "the second rush")]),    # pt_upper_rush02_spawn
     # upstairs: the wizard
     (pt(HIVE, 51), [                                    # pt_upper_spawn01
         WAVE,
         (0, "seq", DIALOGUE, D["m_cue1"], "seq_m_cue1"),
         (0, "members", HIVE, [WIZARD], "the wizard (sq_hive_upper_wizard01)"),
+        (0, "squad", HIVE, UPPER, "the upper floor's Hive"),
         line(3, "o3_s012"),
     ]),
     # o2 is "Kill the Hive Wizard" (user, Nav Mode): its death ends the mission - the outro line,
     # then lifetime phase 7, the game's own post-game screens (Advancement, Activity Rewards)
     ((HIVE, 2, WIZARD, "dead"), objective_done(1, O2, "objective o2") + [
         (0, "seq", DIALOGUE, D["m_outro"], "seq_m_outro"),
-        (8, "phase", 7, "the mission ends: post game"),
+        # the game's own mission-end phase counts down, then its post-game screens (user: "mission
+        # complete, then wait like 30 seconds, then the xp stats and activity rewards")
+        (3, "countdown", 30, "MISSION END"),
+        (1, "phase", 7, "the mission ends: post game"),
     ]),
     (pt(DIALOGUE, 15), [line(0, "o3_s016")]),          # pt_d_o3_s016_start
     (pt(MISSION, 14), objective_done(0, O1C, "objective o1c") + [   # obj_m1_o1c._player_trigger

@@ -15,8 +15,10 @@ trigger is armed at the start and switched off again by the host as soon as it f
 NIGHT-NOTES section 84.
 """
 import argparse
+import json
 import os
 import shutil
+import struct
 import subprocess
 import sys
 
@@ -97,6 +99,20 @@ class Compiler:
         if kind == "perf":
             _, _, group, sub, image, name = step
             return name, ["%s:%d:%s" % (group, sub, open(os.path.join(VALUES, image), "rb").read().hex())]
+        if kind == "squad":                         # (delay, "squad", group, [subs], name)
+            # a squad without member records spawns when each slot of its composition gets an
+            # alive count (value +0x2C = slots, +0x30 i16[] = 1 each; NIGHT-NOTES 93-94)
+            _, _, group, subs, name = step
+            sizes = json.load(open(os.path.join(VALUES, "squad_sizes_%s.json" % self.world[2:].lower())))
+            entries = []
+            for sub in subs:
+                img = bytearray(open(os.path.join(VALUES, "default_kind1.bin"), "rb").read())
+                n = sizes["%08x:%d" % (int(group, 16), sub)]
+                struct.pack_into("<I", img, 0x2C, n)
+                for k in range(n):
+                    struct.pack_into("<h", img, 0x30 + 2 * k, 1)
+                entries.append("%s:%d:%s" % (group, sub, img.hex()))
+            return name, entries
         if kind == "members":                       # (delay, "members", group, [subs], name)
             _, _, group, subs, name = step
             img = open(os.path.join(VALUES, "member_exists.bin"), "rb").read().hex()
@@ -155,6 +171,16 @@ class Compiler:
                     # 9 = "ROUND COMPLETED" scoreboard. Later frames carry phase 3 again, so an
                     # ending phase must be the script's last frame. NIGHT-NOTES section 88.
                     lines.append("%.2f\tframe\t%s\t%s" % (at, self.frame([], phase=step[2]), step[3]))
+                elif kind == "countdown":               # (delay, "countdown", seconds, name)
+                    # lifetime phase 6 "MISSION END: Seconds remaining: N", one frame per second:
+                    # the HUD redraws the number only when the lifetime_timer record changes
+                    # (4786c0e0 kind 17 sub 2; base in 1/15 s, running 0; NIGHT-NOTES 87-88)
+                    for left in range(step[2], -1, -1):
+                        img = bytearray(36)
+                        struct.pack_into("<iiiii", img, 4, 0, step[2] * 15, left * 15, step[2] * 15, 0)
+                        f = self.frame(["0x4786c0e0:2:%s" % img.hex()], phase=6)
+                        lines.append("%.2f\tframe\t%s\t%s (%d s)" % (at + step[2] - left, f, step[3], left))
+                    at += step[2]
                 elif kind == "loadout":
                     import loadout_variant
                     name = "loadout-%s.txt" % step[2]

@@ -1,7 +1,7 @@
 @echo off
 rem The second story mission, "Restoration" (act_cosmo_m1_dome_a), served with no memory edits.
-rem In the game: Director -> pick a destination -> Launch (the server loads Restoration whatever
-rem node is used). You start inside Hive dome A at the foot of the Lunar Complex: up the steps
+rem In the game: Director -> Earth -> Patrol the Cosmodrome -> Launch (the server loads Restoration;
+rem from the Tower node the world loads but the Guardian is never placed - black screen). You start inside Hive dome A at the foot of the Lunar Complex: up the steps
 rem to the gate (HEAD TO SKYWATCH, then UNLOCK THE GATE - it rises a few seconds later), the
 rem Hive inside, the wizard upstairs (KILL THE HIVE WIZARD); its death ends the mission with the
 rem post-game screens of the game itself, then hold triangle for orbit. NIGHT-NOTES.md sections 86-88.
