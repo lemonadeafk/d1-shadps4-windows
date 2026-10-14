@@ -2254,3 +2254,21 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   rest plays "pretty flawless"; the gate snaps open without its animation (low priority); the
   basement acolytes still stand frozen; radar showed enemies the user could not see (the test's
   upper waves, spawned before reaching them).
+
+## 95. The user's custom Hunter loadout (2026-10-13 20:35-20:50, run LOADOUT1)
+- tools\custom_loadout.py builds capture-rig\guardians\hunter-custom from the served Hunter's
+  elements: Burning Eye 6332 (primary), Jewel of Osiris 3321 (backpack), Found Verdict 2229,
+  Black Hammer 2856 (backpack), Raze-Lighter 5141, Hunger of Crota 2858 (backpack), Spliced
+  Nanomania Mask/Grasps/Vest/Boots/Cloak 5728/5725/5726/5729/5727 (+ the template's spare The Last
+  Word). Customization = the Hunter's (wear-helmet only). Flags: account + every story completion.
+  Served via guardians\current.txt = hunter-custom (current.txt was "created" before).
+- FOUND: `inventory rebuild` leaves every WEAPON's talent nodes off (node states +0x5A, 36 B) - no
+  perks on any served weapon until now. custom_loadout turns on talent_grid.default_active (one
+  node per exclusive set + set-less). Burning Eye = grid 1248 (12 nodes; perk indices 436/397
+  in one set, 417, 404, 543). Explosive Rounds NOT chosen yet: perk names unresolved - the perk
+  table 0x80A5E21F (1100 x 20 B: {hash, u32 index, ...}) index does not name through list
+  0x80803A97 (1144 x 12 B {container idx, string hash, flags} - that gave record names); the
+  string "Explosive Rounds" is bank 0x80A5E83E parts 158 / 351.
+- LOADOUT1 (autopilot, Earth -> Patrol): spawned holding the Burning Eye; the character screen
+  shows the full Spliced Nanomania set (WotM look), the three weapons, 40 / 385; opening it does
+  not crash with the weapon node states. Armour stats still 0 (open since earlier).
