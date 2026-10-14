@@ -40,7 +40,7 @@ BASEMENT_THRALLS = [18, 19, 20, 21, 22, 23, 24]
 BASEMENT_TROOPERS = [26, 27, 28]
 WIZARD = 44
 # squads WITHOUT member records, spawned at their designed size (compiler step "squad", sizes from
-# capture\squad_sizes_80cb804b.json; NIGHT-NOTES 93-94). Which trigger brings which squad is read
+# capture\values\squad_sizes_80cb804b.json; NIGHT-NOTES 93-94). Which trigger brings which squad is read
 # from the names: basement second wave (troopers02, t2 thrall02), the basement knight, the upper
 # floor's front / back / t2 trooper, and the two rush waves.
 BASEMENT_WAVE_2 = [29, 30]          # sq_hive_basement_troopers02, sq_t2_hive_basement_thrall02
