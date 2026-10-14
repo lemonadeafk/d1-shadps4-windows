@@ -25,6 +25,8 @@ DIALOGUE = "0x3c2f5ed5"         # group of seq_d_* / seq_m_* / seq_fallen_* reco
 
 BREACH = "0xfc0e45a3"           # the Wall room's own group (bubble 3)
 ACTIVITY = "0x992bb471"         # activity-wide records: objectives, cinematics, pm_in_wall
+GRAVEYARD = "0x9243dffb"        # the graveyard's own group (bubble 12)
+HANGAR = "0x062dd95d"           # the hangar's own group (bubble 13)
 # Objectives (kind 32, value 0x80802A1B, 752 bytes; +0 = a 3-bit state). Subs and their HUD text:
 #   3 ENTER THE WALL, 7 FIND A WEAPON, 11 GRAB THE RIFLE, 14 FIGHT THROUGH THE WALL,
 #   17 FIGHT THROUGH THE FALLEN, 20 FIND THE SHIP, 23 FIND THE SHIP, 26 CLEAR OUT THE FALLEN.
@@ -260,13 +262,80 @@ _ROOM = [
     ((BREACH, 4, 7, "changed"), [(0.5, "loadout", "khvostov_sniper", "the chest's weapon (Calcutta-LR2) is handed over")]),
     (_pt(119), [(0, "gone", BREACH, "2", "the exit doors open")]),      # pt_exit (411,-686): o_breach_doors_exit
 ]
+# Past the Wall (NIGHT-NOTES section 97). Area 12 = the graveyard (group GRAVEYARD), area 13 = the
+# hangar (group HANGAR); their squads have no member records except the dropship pilots and one
+# Dreg, so they come at their designed size (compiler step "squad"); which trigger brings which
+# squad is read from the names. The mission's objectives after FIGHT THROUGH THE WALL (14):
+# 17 FIGHT THROUGH THE FALLEN (graveyard), 20 FIND THE SHIP (on the way to the hangar),
+# 23 FIND THE SHIP (in the hangar), 26 CLEAR OUT THE FALLEN (the Fallen on the player's ship).
+# Ghost lines: o3_* (21-25) in the graveyard, o4_* (26-29) in the hangar, o5_* (30-32) at the end.
+def _gy(sub):           # a graveyard player trigger
+    return (GRAVEYARD, 29, sub)
+
+
+def _hg(sub):           # a hangar player trigger
+    return (HANGAR, 29, sub)
+
+
+def _objective(sub, name, incoming=None, delay=0):
+    steps = [(delay, "objective", sub, ACTIVE, "objective: " + name)]
+    if incoming is not None:
+        steps.insert(0, (delay, "seq", ACTIVITY, incoming, name + " incoming"))
+        steps[1] = (0,) + steps[1][1:]
+    return steps
+
+
+def _done(sub, name, completion=None):
+    steps = [(0, "objective", sub, HIDDEN, name + " done")]
+    if completion is not None:
+        steps.append((0, "seq", ACTIVITY, completion, name + " completion"))
+    return steps
+
+
+HANGAR_SHIP_FIGHT = [8, 9, 10, 11, 12]  # sq_ch1_fallen_on_playership_1-3, sq_m0_fallen_1/2: 1+1+1+1+2
+_BEYOND = [
+    # obj_goto_graveyard trigger: out of the Wall towards the graveyard
+    ((ACTIVITY, 29, 38), _done(14, "FIGHT THROUGH THE WALL", 16)
+        + _objective(17, "FIGHT THROUGH THE FALLEN", 18, delay=1) + [_line(2, 21, "o3_10")]),
+    (_gy(25), [(0, "squad", GRAVEYARD, [14], "Fallen drop in (sq_fallen_m0_drop_1)")]),           # pt_drop_1
+    (_gy(26), [(0, "squad", GRAVEYARD, [15], "Fallen drop in (sq_fallen_m0_drop_2)"),              # pt_drop_2
+               _line(1, 22, "o3_20")]),
+    (_gy(28), [(0, "squad", GRAVEYARD, [16], "an ambush (sq_fallen_m0_drop_2_b)")]),              # pt_drop_2_ambush
+    (_gy(27), [(0, "squad", GRAVEYARD, [20], "Fallen drop down (sq_fallen_m0_dropdown)"),          # pt_bunker_ambush
+               (0, "members", GRAVEYARD, [21], "its Dreg")]),
+    (_gy(29), [(0, "squad", GRAVEYARD, [4, 6], "the Ketch's dropships"),                           # pt_ketch_dropship
+               (0, "members", GRAVEYARD, [5, 7], "their pilots"), _line(1, 23, "o3_30")]),
+    (_gy(30), [(0, "squad", GRAVEYARD, [8, 10, 12], "more dropships and a tank"),                 # pt_ketch_dropship_2
+               (0, "members", GRAVEYARD, [9, 11, 13], "their pilots")]),
+    (_gy(32), [(0, "squad", GRAVEYARD, [17, 19], "backup: the upgrade squad and a sniper"),        # pt_grenade_backup
+               _line(1, 24, "o3_40")]),
+    # pt_exit_shanks: the graveyard's way out (FIGHT THROUGH THE FALLEN has no trigger of its own)
+    (_gy(31), [(0, "squad", GRAVEYARD, [18], "Shanks at the exit")]
+        + _done(17, "FIGHT THROUGH THE FALLEN", 19)
+        + _objective(20, "FIND THE SHIP", 21, delay=1) + [_line(2, 25, "o3_50")]),
+    # obj_m0_goto_hangar trigger: into the hangar
+    ((ACTIVITY, 29, 40), _done(20, "FIND THE SHIP", 22) + _objective(23, "FIND THE SHIP", 24, delay=1)),
+    (_hg(16), [(0, "squad", HANGAR, [5, 6, 7], "the hangar's first Fallen"), _line(1, 26, "o4_20")]),  # pt_main_room
+    # obj_m0_m04a trigger: the ship - and the Fallen all over it
+    ((ACTIVITY, 29, 41), _done(23, "FIND THE SHIP", 25)
+        + _objective(26, "CLEAR OUT THE FALLEN", 27, delay=1)
+        + [(0, "squad", HANGAR, HANGAR_SHIP_FIGHT, "the Fallen on the ship"), _line(1, 27, "o4_30")]),
+    (_hg(18), [_line(0, 28, "o4_40")]),                                                           # pt_fallen_backup
+    # all six down: the mission is over - the outro line, the countdown, the post-game
+    (("kills", 6, (ACTIVITY, 29, 41)), _done(26, "CLEAR OUT THE FALLEN", 28) + [
+        _line(1, 30, "o5_10"),
+        _line(5, 31, "o5_20"),
+        (3, "countdown", 30, "MISSION END"),
+        (1, "phase", 7, "the mission ends: post game"),
+    ]),
+]
 EVENT_SCRIPTS = {
-    "mission": _OPENING + _ROOM,
+    "mission": _OPENING + _ROOM + _BEYOND,
     # started inside the Wall: the room's own cue has already been reported, so open it up at once
     "wall": [("start", [(0, "objective", 7, ACTIVE, "objective: FIND A WEAPON"),
                         (0, "spawn", BREACH, "the Ghost appears", [95]),
                         _line(1, 9, "o2_10"),
-                        (5, "fire", _pt(120), "the power-up starts")])] + _ROOM[1:],
+                        (5, "fire", _pt(120), "the power-up starts")])] + _ROOM[1:] + _BEYOND,
 }
 SETTLE = {"wall": 18, "mission": 18}     # seconds after in_world before the first step
 

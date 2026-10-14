@@ -44,7 +44,12 @@ def _missions():
                  # after the area switch the host's arrival frames reset the triggers: arm them
                  # again (the ones that already fired are switched off again at once by their
                  # prepared answer)
-                 rearm="%s:4:0" % md.BREACH[2:])
+                 rearm="%s:4:0" % md.BREACH[2:],
+                 # the graveyard (12) and the hangar (13): their records' frames are built for
+                 # their own area, and their triggers are armed when the player gets there (the
+                 # first report of one of the area's objects) - NIGHT-NOTES section 97
+                 group_bubbles={int(md.BREACH, 16): 3, int(md.GRAVEYARD, 16): 12, int(md.HANGAR, 16): 13},
+                 areas={12: "%s:4:0" % md.GRAVEYARD[2:], 13: "%s:4:2" % md.HANGAR[2:]})
     return {
         "mission": dict(rises, script=md.EVENT_SCRIPTS["mission"]),
         "wall": dict(rises, script=md.EVENT_SCRIPTS["wall"]),
@@ -54,16 +59,21 @@ def _missions():
 
 
 class Compiler:
-    def __init__(self, out, world=md.WORLD, bubble=3, objectives=md.ACTIVITY):
+    def __init__(self, out, world=md.WORLD, bubble=3, objectives=md.ACTIVITY, group_bubbles=None):
         self.out, self.world, self.bubble, self.objectives = out, world, bubble, objectives
+        self.group_bubbles = group_bubbles or {}
         self.n, self.seq = 0, 100
         self.objective = open(os.path.join(VALUES, "objective_default.bin"), "rb").read()
         self.jobs = []
         os.environ["D1_ORACLE_EXTRA_TAGS"] = "%#x,%#x" % (object_state.STATE_TAG, md.OBJECTIVE_TAG)
 
-    def frame(self, entries, phase=None):
+    def frame(self, entries, phase=None, bubble=None):
         """Queue a frame for `entries` (every frame also carries the lifetime phase: 3 = play
-        unless given); returns its file name."""
+        unless given), built for the area of its records' group; returns its file name."""
+        if bubble is None:
+            groups = {int(e.split(":")[0], 16) for e in entries}
+            known = [self.group_bubbles[g] for g in groups if g in self.group_bubbles]
+            bubble = known[0] if known else self.bubble
         self.n += 1
         name = "%03d.udt5" % self.n
         path = os.path.join(self.out, name)
@@ -74,7 +84,7 @@ class Compiler:
                 f.write("\n".join(entries))
             args = ["@" + listing]
         env = dict(os.environ, SENSOR_FRAME_PHASE=str(phase)) if phase is not None else None
-        self.jobs.append(subprocess.Popen([inject_sensor.SENSOR_FRAME, self.world, str(self.bubble), path, *args],
+        self.jobs.append(subprocess.Popen([inject_sensor.SENSOR_FRAME, self.world, str(bubble), path, *args],
                                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env))
         if len(self.jobs) >= 8:
             self.flush()
@@ -140,17 +150,26 @@ class Compiler:
     @staticmethod
     def cue(c):
         """(group, kind, sub[, "changed" | "dead" | "bits=..."]) as mission.txt writes it."""
+        if c[0] == "kills":                         # ("kills", n, cue): n kills after cue
+            return "kills:%d>%s" % (c[1], Compiler.cue(c[2]))
         s = "%s:%d:%d" % (c[0][2:], c[1], c[2])
         if len(c) > 3:
             s += ":" + {"dead": "bits=" + DEATH_BITS}.get(c[3], c[3])
         return s
 
-    def compile(self, script, skip=(), rearm=None):
+    def area_triggers(self, bubble, skip=()):
+        return sorted((g, sub) for (g, sub), k in sense_reports.slots(bubble, self.world[2:]).items()
+                      if k == 29 and (g, sub) not in skip)
+
+    def arm_frames(self, bubble, triggers):
+        return [self.frame(["%#x:%d:0100000001000000" % t for t in triggers[i:i + 12]], bubble=bubble)
+                for i in range(0, len(triggers), 12)]
+
+    def compile(self, script, skip=(), rearm=None, areas=None):
         lines = []
-        triggers = sorted((g, sub) for (g, sub), k in sense_reports.slots(self.bubble, self.world[2:]).items()
-                          if k == 29 and (g, sub) not in skip)
-        arm = [self.frame(["%#x:%d:0100000001000000" % t for t in triggers[i:i + 12]])
-               for i in range(0, len(triggers), 12)]
+        triggers = self.area_triggers(self.bubble, skip)
+        arm = self.arm_frames(self.bubble, triggers)
+        answers = {self.bubble: triggers}
         for cue, steps in script:
             if cue == "start":
                 lines.append("cue\tstart")
@@ -194,6 +213,13 @@ class Compiler:
         if rearm:
             lines.append("cue\t%s" % rearm)
             lines += ["17\tframe\t%s\tre-arm the player triggers" % f for f in arm]
+        for bubble, cue in (areas or {}).items():
+            # another area of the mission: arm its triggers once its arrival frames are over
+            area = self.area_triggers(bubble, skip)
+            answers[bubble] = area
+            lines.append("cue\t%s" % cue)
+            lines += ["17\tframe\t%s\tarm area %d's player triggers" % (f, bubble)
+                      for f in self.arm_frames(bubble, area)]
         self.flush()
         with open(os.path.join(self.out, "mission.txt"), "w", encoding="utf-8") as f:
             f.write("# compiled by tools\\mission_compile.py\n")
@@ -203,14 +229,19 @@ class Compiler:
         shutil.rmtree(ready, ignore_errors=True)
         os.makedirs(ready)
         jobs = []
-        for g, sub in triggers:
-            jobs.append(subprocess.Popen([inject_sensor.SENSOR_FRAME, self.world, str(self.bubble),
-                                          os.path.join(ready, "%08x-%d.udt5" % (g, sub)),
-                                          "%#x:%d:0000000000000000" % (g, sub)],
-                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
-            if len(jobs) >= 8:
-                [p.wait() for p in jobs]
-                jobs = []
+        done = set()
+        for bubble, area in answers.items():
+            for g, sub in area:
+                if (g, sub) in done:            # mission-wide triggers are in every area
+                    continue
+                done.add((g, sub))
+                jobs.append(subprocess.Popen([inject_sensor.SENSOR_FRAME, self.world, str(bubble),
+                                              os.path.join(ready, "%08x-%d.udt5" % (g, sub)),
+                                              "%#x:%d:0000000000000000" % (g, sub)],
+                                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+                if len(jobs) >= 8:
+                    [p.wait() for p in jobs]
+                    jobs = []
         [p.wait() for p in jobs]
         return len(lines), self.n
 
@@ -224,8 +255,8 @@ def main():
     shutil.rmtree(a.out, ignore_errors=True)
     os.makedirs(a.out)
     m = missions[a.script]
-    n_lines, n_frames = Compiler(a.out, m["world"], m["bubble"], m["objectives"]).compile(
-        m["script"], m["skip"], m["rearm"])
+    n_lines, n_frames = Compiler(a.out, m["world"], m["bubble"], m["objectives"], m.get("group_bubbles")).compile(
+        m["script"], m["skip"], m["rearm"], m.get("areas"))
     print("%s: %d lines, %d frames" % (os.path.join(a.out, "mission.txt"), n_lines, n_frames))
 
 

@@ -21,6 +21,9 @@ rem The mission is played by the activity host itself (tools\mission_compile.py 
 rem NIGHT-NOTES section 84); mission_director.py only records triggers and the walked path.
 python "%~dp0tools\mission_compile.py" --script mission --out "%~dp0inject\mission"
 start "mission director" /min python "%~dp0tools\mission_director.py" --log-only
+rem A Guardian made in the creator gets XP for its kills, and the completion of the mission is
+rem recorded for it (Restoration opens): tools\xp_service.py, tools\progress.py, NIGHT-NOTES 89-97.
+if exist "C:\d1server\d1preservation\capture-rig\guardians\current.txt" start "xp service" /min python "%~dp0tools\xp_service.py" --wait-new
 python "%~dp0d1_launch.py" --inworld --director --world act_cosmo_m0_highway --checksum 0x8fe07299 --bubbles 22 --chosen 0-21 --env D1_AH_MISSION="%~dp0inject\mission\mission.txt" --env D1_AH_SENSOR_WORLD=0x80cb800d:14 --env D1_AH_ACTIVITY_INDEX=163 --env D1_AH_SENSOR_PLAYER_TEAM=-1 --env "D1_AH_SENSOR_KIND_VALUE=2:0x80800868:%~dp0capture\values\member_exists.bin,4:0x808007d9:%~dp0capture\values\object_exists.bin" --env D1_AH_SENSOR_KIND_RESEQ=4 --env D1_AH_SENSOR_KIND_SKIP=2@3 --env D1_AH_SENSOR_FOLLOW_MAX=3 --env D1_AH_SENSOR_REPEAT_MAX=3 --env "D1_ROSTER_DIR=%VARIANTS%\unarmed\roster" --env "D1_CHARACTER_FILE=%VARIANTS%\unarmed\char.bin" --env "D1_SWAP_TRIGGER=%~dp0inject\loadout-swap.txt" --name RISES %* --env D1_ORACLE_EXTRA_TAGS=0x8080279a --env D1_AH_SENSOR_SLOT_VALUE=fc0e45a3:5:808007d9:"%~dp0capture\values\gate_absent.bin",fc0e45a3:6:808007d9:"%~dp0capture\values\gate_absent.bin",fc0e45a3:95:80800868:"%~dp0capture\values\member_exists.bin",fc0e45a3:4:808007d9:"%~dp0capture\values\gate_closed.bin",fc0e45a3:1:808007d9:"%~dp0capture\values\gate_open.bin"
 echo.
 pause
