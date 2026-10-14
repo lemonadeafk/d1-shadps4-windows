@@ -30,12 +30,16 @@ TOWER_ARGS = ["--inworld", "--world", "city_tower_default1", "--checksum", "0x7f
 # Other destinations: world facts read from the world record (`<activity>:scenario_client` in
 # capture\world-namespace.tsv, tools\world_names.py): +0x0C checksum, +0x48 bubble count, valid
 # flags in the bubble table. `launch` is the tool that picks the node in the Director.
+PUBLIC_REGIONS = ["D1_ENGINE_CONFIG_U8=175=0", "D1_AH_PAH_AMBASSADOR=1"]
 DESTINATIONS = {
     "tower": dict(args=TOWER_ARGS, env=[], launch="launch_tower.py"),
     "cosmo_patrol": dict(
         args=["--inworld", "--world", "patrol_deltas_com01", "--checksum", "0x6a556a7f",
               "--bubbles", "22", "--chosen", "0-21"],
-        env=["D1_AH_SENSOR_WORLD=0x80cb87eb", "D1_AH_ACTIVITY_INDEX=92"],
+        # public regions (NIGHT-NOTES 97): no public matchmaking, we are the ambassador, and the
+        # public activity client's checksum (scenario +0x10, measured)
+        env=["D1_AH_SENSOR_WORLD=0x80cb87eb", "D1_AH_ACTIVITY_INDEX=92", *PUBLIC_REGIONS,
+             "D1_AH_ACTIVITY_CHECKSUM_PUBLIC=0xe354f1ea"],
         launch="launch_patrol.py"),
     # First Light (Crucible, one private bubble) as Elimination (407, the repo's measured mode).
     "pvp_moonbase": dict(

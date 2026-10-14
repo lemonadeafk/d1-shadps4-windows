@@ -2300,3 +2300,28 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   preview loads them. NEXT: capture the coloured preview, dump the same material buffer, diff.
 - The live session had the primary swapped to Jewel of Osiris by the user: the equip service
   rebuilt hunter-custom (peer slot 6 = 3321). Weapon entries carry +0x0A = 12 / 10 / 93.
+
+## 97. PUBLIC REGIONS CONNECT - Patrol the Cosmodrome in PUB00.00 (runs PUBLIC2-7, 2026-10-14)
+Screenshot of the result: the run folder's shot-*-inworld.png (PUBLIC7). Four things were missing:
+1. AMBASSADORSHIP. The PAH tabulated region record +0x09 = 1 (assigned; 2 = revoked, +0x08 the
+   revocation token), +0x0A = the ambassador's peer index. We are the ambassador iff +0x0A == our
+   peer and +0x09 == 1 (task assigners 0x77F220 / 0x77F3E0); only the ambassador of a PUBLIC
+   region gets the matchmaking task. Host: D1_AH_PAH_AMBASSADOR=1 (set_pah_ambassador).
+2. MATCHMAKING. Engine Configuration key 175 (one raw byte -> config +0x2081; 174 -> +0x2080) is
+   "matchmaking enabled" for the PUBLIC slots (status getter 0x768930 returns 5 = disabled when
+   it is 0). The matchmaking task 0x77AC20 then skips straight to 'connecting' and starts the
+   PUBLIC TARGET activity instance. Responder: D1_ENGINE_CONFIG_U8=175=0 (allow-list 174/175).
+3. ONE AH ID PER CONNECTION. The activity host answers BAP msg 6 on its own connection (not the
+   responder); every connection started its registry at D1A0..01, so the public client got the
+   private one's id and the client, which routes AH messages by id, handed the public join result
+   to the PRIVATE client ("Nonces mismatch", PUBLIC2/3). Now connection n hands out FIRST + n and
+   the instance adopts the id its join request names (+0x08).
+4. THE PUBLIC CHECKSUM. FUN_00299100 compares blob+0x5C with scenario + 0x0C + 4*ac[+0x18]: the
+   public client reads +0x10 (patrol_deltas_com01: private 0x6a556a7f, PUBLIC 0xe354f1ea, read with
+   tools\scenario_checksum_win.py now). The public client is recognised by its join properties:
+   FAH at +0xC8 (GAH +0xD0) names another of our AH ids (the private one); msg 6's launch args are
+   EMPTY on this path. D1_AH_ACTIVITY_CHECKSUM_PUBLIC. (Without it the world still loads, but the
+   public instance fails: PUBLIC4/5.)
+autopilot --destination cosmo_patrol now carries all of it. Next: after spawn the client starts a
+z-leg to PRV72.72 ("Cannot precache ... second slice-set not allowed" once) - walking public <->
+private regions, then Restoration's real start (Steppes, public) and A Guardian Rises past the Wall.
