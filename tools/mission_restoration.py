@@ -2,10 +2,13 @@ r"""Restoration (activity 165, world act_cosmo_m1_dome_a): the event script for 
 
     python tools\mission_compile.py --script restoration --out inject\mission-restoration
 
-Started inside Hive dome A (bubble 8, PRV64.64), at the foot of the Lunar Complex. The mission
-really begins in the Steppes (public bubble 0), but public regions do not connect yet; the first
-objective's own trigger is here in front of the complex anyway. Record names:
-capture\values\record_names_restoration.json; NIGHT-NOTES sections 86-87.
+The mission's real start: the Steppes (public bubble 0, PUB00.00 - public regions connect since
+NIGHT-NOTES 97). The player walks the Steppes -> outside dome A (public 6) -> into the dome
+(private 8, PRV64.64), where every scripted event after the start happens. The mission's own
+records (objectives, Ghost lines) are in every area, the dome's Hive only in 8, so the Hive's
+frames are built for 8 and the dome's triggers armed when the player gets there (the first
+report of the gate). Record names: capture\values\record_names_restoration.json; NIGHT-NOTES
+86-87, 98.
 
 What the game showed (run RES4): objective o1b is "UNLOCK THE GATE - Deploy Ghost to unseal the
 gate to the Lunar Complex"; the gate (dg_cosmo_dome_a_door01) opens on state channel 2 = 1 and
@@ -18,10 +21,17 @@ name), ("fire", cue, name). Which Ghost line belongs to which moment is read fro
 (seq_d_o1_* = o1a, o2_* = o1b, o3_* = o1c) - the words are not known, the order is.
 """
 WORLD = "0x80cb804b"            # act_cosmo_m1_dome_a:scenario_client
-BUBBLE = 8                      # PRV64.64, inside Hive dome A
+BUBBLE = 0                      # PUB00.00, the Steppes: where the mission starts
+DOME = 8                        # PRV64.64, inside Hive dome A
 MISSION = "0xff4a0c1a"          # act_cosmo_m1_dome_a: objectives, their sequences and triggers
 DIALOGUE = "0x8bd80dbe"         # the Ghost's lines and music cues
 HIVE = "0x41d61614"             # dome A's Hive (bubble 8 only)
+GROUP_BUBBLES = {int(HIVE, 16): DOME}
+# the player is in the dome: the first report of one of its Hive objects (the gate) arms the
+# dome's player triggers (mission_compile "areas")
+AREAS = {DOME: "%s:4:0" % HIVE[2:]}
+# the public checksum of the world (scenario +0x10, run RESPUB1; the same as Patrol's)
+PUBLIC_CHECKSUM = "0xe354f1ea"
 
 HIDDEN, ANNOUNCE, ACTIVE = 0, 1, 3
 # objectives (kind 32) and their incoming / completion sequences (kind 5) in MISSION
@@ -133,3 +143,5 @@ EVENT_SCRIPT = [
         line(1, "o3_s05"),
     ] + objective_on(4, O2, "objective o2: KILL THE HIVE WIZARD") + [line(1, "o3_s01")]),
 ]
+# every event after the start happens inside the dome
+EVENT_SCRIPT = [EVENT_SCRIPT[0]] + [(cue, steps, DOME) for cue, steps in EVENT_SCRIPT[1:]]

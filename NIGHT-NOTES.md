@@ -2325,3 +2325,27 @@ Screenshot of the result: the run folder's shot-*-inworld.png (PUBLIC7). Four th
 autopilot --destination cosmo_patrol now carries all of it. Next: after spawn the client starts a
 z-leg to PRV72.72 ("Cannot precache ... second slice-set not allowed" once) - walking public <->
 private regions, then Restoration's real start (Steppes, public) and A Guardian Rises past the Wall.
+
+## 98. Restoration from its real start - the Steppes (runs RESPUB1-4, 2026-10-14)
+- act_cosmo_m1_dome_a's PUBLIC checksum (scenario +0x10) is 0xe354f1ea, the same as Patrol's:
+  the Cosmodrome's public activity is one (tools\scenario_checksum_win.py now, RESPUB1).
+- Two activity clients run at once in a public area. With --director (the sensor authority
+  hand-over, player slot, injection dir) the PUBLIC one reports the world (RESPUB4: 69 sense
+  updates, 29 incidents) and the PRIVATE one almost nothing. Without --director neither reported
+  and no frame showed (RESPUB2/3) - launch missions with --director.
+- The host: an instance knows it is the public one (join properties name another of our AHs);
+  the mission engine runs only on the PRIVATE one, and its start no longer waits for a client
+  report (a private client in a public area sends none): the first heartbeat after Live.
+  Injected frames can be addressed: inject\<name>@public.udt5 / @private.udt5.
+- RESULT (RESPUB4): spawn in the Steppes in mission daylight; Nav Mode shows "HEAD TO SKYWATCH -
+  Push into the old array domes and find what the Fallen are protecting"; enemy on the radar.
+- Compiler: an event may carry the area the player is in when it runs, (cue, steps, bubble);
+  trigger answers present in several areas are written per area (<group>-<sub>@<bubble>.udt5)
+  and the host sends the one for its current region. Restoration: start in 0, every later
+  event in the dome (8), the dome's triggers armed at the first report of its gate.
+- OPEN: a trigger in a PUBLIC area is reported on the public connection, where no mission engine
+  runs - needs one engine shared by both connections (A Guardian Rises' graveyard, 12, is
+  public). Restoration's own cues are all in the private dome, so it is not affected.
+- Settings: game options live in the account block (701; settings fields from +0x404). The user
+  switching controller vibration off changed decoded +0x432 1 -> 0. d1_launch.py now serves the
+  newest saved 701 even if a session ended before its cleanup.

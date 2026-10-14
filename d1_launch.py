@@ -568,7 +568,13 @@ def session(args):
         state_dir = state_root / who
         state_dir.mkdir(parents=True, exist_ok=True)
         shared_account = state_root / "account-701.bin"
-        if shared_account.exists():
+        # the account's block (game settings such as controller vibration) as the game last
+        # uploaded it: the newest copy, even if a session ended before its cleanup copied it out
+        uploads = [p for p in [shared_account, *state_root.glob("*/701.bin")] if p.exists()]
+        if uploads:
+            newest = max(uploads, key=lambda p: p.stat().st_mtime)
+            if newest != shared_account:
+                shutil.copyfile(newest, shared_account)
             shutil.copyfile(shared_account, state_dir / "701.bin")
         env["D1_CLIENT_STATE_DIR"] = str(state_dir)
         try:

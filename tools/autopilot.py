@@ -97,7 +97,9 @@ DESTINATIONS = {
     "restoration": dict(
         args=["--inworld", "--world", "act_cosmo_m1_dome_a", "--checksum", "0x42fe77a5",
               "--bubbles", "22", "--chosen", "0-21"],
-        env=["D1_AH_SENSOR_WORLD=0x80cb804b:8", "D1_AH_ACTIVITY_INDEX=165",
+        # the real start: the Steppes (public bubble 0); the dome is bubble 8 (NIGHT-NOTES 98)
+        env=["D1_AH_SENSOR_WORLD=0x80cb804b:0", "D1_AH_ACTIVITY_INDEX=165", *PUBLIC_REGIONS,
+             "D1_AH_ACTIVITY_CHECKSUM_PUBLIC=0xe354f1ea",
              "D1_AH_SENSOR_PLAYER_TEAM=-1",
              "D1_AH_SENSOR_KIND_VALUE=2:0x80800868:" + os.path.join(ROOT, "capture", "values", "member_exists.bin")
              + ",4:0x808007d9:" + os.path.join(ROOT, "capture", "values", "object_exists.bin"),

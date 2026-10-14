@@ -54,7 +54,8 @@ def _missions():
         "mission": dict(rises, script=md.EVENT_SCRIPTS["mission"]),
         "wall": dict(rises, script=md.EVENT_SCRIPTS["wall"]),
         "restoration": dict(world=res.WORLD, bubble=res.BUBBLE, objectives=res.MISSION, skip=set(),
-                            rearm=None, script=res.EVENT_SCRIPT),
+                            rearm=None, script=res.EVENT_SCRIPT, group_bubbles=res.GROUP_BUBBLES,
+                            areas=res.AREAS),
     }
 
 
@@ -62,6 +63,7 @@ class Compiler:
     def __init__(self, out, world=md.WORLD, bubble=3, objectives=md.ACTIVITY, group_bubbles=None):
         self.out, self.world, self.bubble, self.objectives = out, world, bubble, objectives
         self.group_bubbles = group_bubbles or {}
+        self.event_bubble = None        # the area the player is in when the current event runs
         self.n, self.seq = 0, 100
         self.objective = open(os.path.join(VALUES, "objective_default.bin"), "rb").read()
         self.jobs = []
@@ -73,7 +75,7 @@ class Compiler:
         if bubble is None:
             groups = {int(e.split(":")[0], 16) for e in entries}
             known = [self.group_bubbles[g] for g in groups if g in self.group_bubbles]
-            bubble = known[0] if known else self.bubble
+            bubble = known[0] if known else (self.event_bubble if self.event_bubble is not None else self.bubble)
         self.n += 1
         name = "%03d.udt5" % self.n
         path = os.path.join(self.out, name)
@@ -170,7 +172,11 @@ class Compiler:
         triggers = self.area_triggers(self.bubble, skip)
         arm = self.arm_frames(self.bubble, triggers)
         answers = {self.bubble: triggers}
-        for cue, steps in script:
+        for event in script:
+            # (cue, steps) or (cue, steps, bubble): the area the player is in when it runs, for
+            # the records present in every area (a frame is laid out for one area's sensors)
+            cue, steps = event[0], event[1]
+            self.event_bubble = event[2] if len(event) > 2 else None
             if cue == "start":
                 lines.append("cue\tstart")
                 # armed once the host's arrival frames are over (they reset the triggers)
@@ -229,14 +235,17 @@ class Compiler:
         shutil.rmtree(ready, ignore_errors=True)
         os.makedirs(ready)
         jobs = []
-        done = set()
+        # a trigger in several areas (mission-wide records are in every area) gets one answer per
+        # area, "<group>-<sub>@<bubble>"; the host sends the one for the client's current area
+        areas_of = {}
+        for bubble, area in answers.items():
+            for t in area:
+                areas_of.setdefault(t, []).append(bubble)
         for bubble, area in answers.items():
             for g, sub in area:
-                if (g, sub) in done:            # mission-wide triggers are in every area
-                    continue
-                done.add((g, sub))
+                tag = "@%d" % bubble if len(areas_of[(g, sub)]) > 1 else ""
                 jobs.append(subprocess.Popen([inject_sensor.SENSOR_FRAME, self.world, str(bubble),
-                                              os.path.join(ready, "%08x-%d.udt5" % (g, sub)),
+                                              os.path.join(ready, "%08x-%d%s.udt5" % (g, sub, tag)),
                                               "%#x:%d:0000000000000000" % (g, sub)],
                                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
                 if len(jobs) >= 8:
