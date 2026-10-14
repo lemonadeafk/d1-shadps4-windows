@@ -2279,3 +2279,24 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
   via FUN_00289E80 / FUN_00289ED0; the entry's zero tail (+0x20..+0x3F) is not read there. Lead:
   the dye / gear content the world tag loader (B15, fill_desired_items) must make resident vs the
   preview widget loading it itself; confirm with a RenderDoc capture of a grey weapon.
+
+## 96. Grey weapons: RenderDoc (run GREY1, capture runs\...GREY1\grey.rdc)
+- Gun pixel (1170,645 of 1920x1080): G-buffer target 3809 (R8G8B8A8_SRGB) written by the gun's
+  draws eid 763/770/777 with NEUTRAL GREY (0.27, 0.27, 0.27) straight from the pixel shader
+  (shader ResourceId 6172). Inputs: fs_img0/1 = texture 3917 (256x256, black, also read by the
+  first-person arms 742-830 and post passes) sampled with the 2nd UV set, img1 decoded as a normal
+  -> DETAIL maps, not dyes; img2 grey detail (BC1 sRGB 2048), img3 normal (BC5), img4 the DYE MASK
+  (BC1, colourful), img5 8-layer array, img6 noise. ssbo_1 (304 B material constants, buffer 213
+  +12135296) has no colour vectors: dwords 12-15 (4,1,1,1), 56-59 (0,1,1,1), 60-63 (0,0,0,1),
+  64-67 0, 68-71 (0,0,1,0) - the DYE COLOURS ARE NOT FILLED. ssbo_2 (224 B) = transforms.
+- Render description builder FUN_0054CF70: per equipment slot (block + 0x1E8 + slot*0x40) it reads
+  content index (+0x08), art (+0x0C), extras (+0x0E, 8 x u16). Two paths: with an item element
+  (the PREVIEW, coloured) extras = FUN_00289ED0(item+0x26 = 8 attached item content indices ->
+  each one's class arrangement); without (the WORLD, grey) extras = the entry's +0x0E as stored.
+  Both are 0xFFFF for our items, and the stored art matches the art table, so neither explains it.
+  FUN_0054E6C0 takes the extras ([rbp+0x10]) and an out pointer ([rbp+0x18]) and walks
+  arrangement data; dye colours would come from the arrangement's dye references - lead: the dye
+  assets the in-world path needs are not resident / not requested (B15 world tag loader), while the
+  preview loads them. NEXT: capture the coloured preview, dump the same material buffer, diff.
+- The live session had the primary swapped to Jewel of Osiris by the user: the equip service
+  rebuilt hunter-custom (peer slot 6 = 3321). Weapon entries carry +0x0A = 12 / 10 / 93.
