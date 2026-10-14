@@ -2272,3 +2272,10 @@ log patches, unsigned manifest, optional idle-kick NOP (none touch spawning).
 - LOADOUT1 (autopilot, Earth -> Patrol): spawned holding the Burning Eye; the character screen
   shows the full Spliced Nanomania set (WotM look), the three weapons, 40 / 385; opening it does
   not crash with the weapon node states. Armour stats still 0 (open since earlier).
+- USER (run PLAY2): weapons are GREY in the world (first person) but fully coloured in the item
+  preview - and were grey before too (The Last Word, Khvostov). Not the loadout. The render
+  builder FUN_0054CF70 reads per equipment entry (block + 0x1E8 + slot*0x40) only the content
+  index (+0x08), art arrangement (+0x0C) and the 8 extra indices (+0x0E), then the gear record
+  via FUN_00289E80 / FUN_00289ED0; the entry's zero tail (+0x20..+0x3F) is not read there. Lead:
+  the dye / gear content the world tag loader (B15, fill_desired_items) must make resident vs the
+  preview widget loading it itself; confirm with a RenderDoc capture of a grey weapon.
